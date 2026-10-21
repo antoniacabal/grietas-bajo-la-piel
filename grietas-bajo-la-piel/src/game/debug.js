@@ -74,6 +74,9 @@ export function initDebug(actions) {
     add(cam, { 'Vista general del mapa': () => { CONFIG.camera.zoom = 0.12 }, 'Zoom normal': () => { CONFIG.camera.zoom = 1 } })
     cam.add(CONFIG.player, 'speed', 1, 30, 0.5).name('velocidad al caminar (para recorrer rápido)')
 
+    // Protagonista: sus animaciones en un espacio aparte (visor.js), sin el resto del juego, con cámara libre y los huesos a la vista
+    add(g.addFolder('Protagonista'), { 'Abrir visor de animaciones (con huesos)': () => import('./visor.js').then(m => m.abrirVisor()) })
+
     // 7. Pruebas
     add(g.addFolder('Pruebas'), {
         'Reiniciar': () => location.reload(),

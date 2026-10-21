@@ -32,7 +32,7 @@
 .gx-fila{display:flex;gap:.5rem}
 .gx-full{display:inline-flex;align-items:center;justify-content:center;padding:.5rem .6rem}
 .gx-exit,.gx-audio{transition:opacity .4s,visibility .4s}
-.gx-tarjeta .gx-exit,.gx-tarjeta .gx-audio{opacity:0;visibility:hidden} /* no tapan las tarjetas de narrativa ("10 de agosto", "Sismo en Colombia"...) */
+.gx-tarjeta .gx-exit,.gx-tarjeta .gx-audio,.gx-sin-hud .gx-exit,.gx-sin-hud .gx-audio{opacity:0;visibility:hidden} /* no tapan las tarjetas de narrativa ("10 de agosto", "Sismo en Colombia"...) */
 .gx-minijuego .gx-exit{opacity:.35;pointer-events:none} /* durante los minijuegos la salida rápida no se puede usar */
 .gx-full svg{width:1.25rem;height:1.25rem;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .gx-full-salir,.gx-full--on .gx-full-entrar{display:none}
@@ -47,7 +47,7 @@ body.gx-touch-on.gx-vibra-ok .gx-vibra{display:block} /* solo en celular, y si e
 /* 3. Medidor de respiración: un círculo que respira (inspirado en los ejercicios de respiración zen).
       Los halos son decoración; .gx-zone es la franja gris clara (zona correcta); .gx-needle es el aro del ritmo; .gx-fill es tu respiración */
 .gx-breath[hidden]{display:none}
-.gx-breath{bottom:3%;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
+.gx-breath{bottom:7%;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
 .gx-orb{position:relative;width:220px;height:220px}
 .gx-orb-svg{display:block;width:100%;height:100%;overflow:visible}
 .gx-orb-halo{fill:rgba(228,255,255,.05);stroke:rgba(228,255,255,.14);stroke-width:1}
@@ -62,13 +62,12 @@ body.gx-touch-on.gx-vibra-ok .gx-vibra{display:block} /* solo en celular, y si e
 .gx-bar-fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#6FA86B,#a8d99a);box-shadow:0 0 10px rgba(143,201,128,.6)}
 .gx-breath--barra .gx-orb{display:none}
 .gx-breath--barra .gx-bar{display:block}
-.gx-orb-text{display:flex;align-items:center;gap:.5rem;margin-top:.4rem;pointer-events:none} /* rótulo y reloj, debajo del círculo */
-.gx-label{padding:.3rem .85rem;border-radius:999px;background:rgba(32,24,38,.72);color:#E4FFFF;text-align:center;white-space:nowrap;font-family:'Outfit',sans-serif;font-weight:700;font-size:1.05rem;line-height:1.2} /* Outfit: el texto queda centrado en la cajita (con Dongle quedaba corrido) */
-.gx-timer{padding:.1rem .6rem;border-radius:999px;background:rgba(32,24,38,.72);border:1px solid rgba(228,255,255,.25);font-size:.9rem;font-variant-numeric:tabular-nums;white-space:nowrap} /* reloj del minijuego, debajo del rótulo */
+.gx-label{padding:.3rem .85rem;border-radius:999px;background:rgba(32,24,38,.72);color:#E4FFFF;text-align:center;white-space:nowrap;font-family:'Outfit',sans-serif;font-weight:700;font-size:1.65rem;line-height:1.2;margin-bottom:.5rem;pointer-events:none} /* lo primero que se lee: arriba del círculo y grande · Outfit: el texto queda centrado en la cajita (con Dongle quedaba corrido) */
+.gx-timer{margin-top:.5rem;pointer-events:none;padding:.1rem .6rem;border-radius:999px;background:rgba(32,24,38,.72);border:1px solid rgba(228,255,255,.25);font-size:.9rem;font-variant-numeric:tabular-nums;white-space:nowrap} /* reloj del minijuego, debajo del rótulo */
 .gx-timer--poco{color:#FF8A80;border-color:#D01F2A;animation:gx-timer-late .8s ease-in-out infinite}
 @keyframes gx-timer-late{50%{transform:scale(1.12)}}
 @media (prefers-reduced-motion:reduce){.gx-timer--poco{animation:none}}
-.gx-breath-hint{margin-top:.4rem;padding:.25rem .8rem;border-radius:8px;background:rgba(32,24,38,.85);font-size:.95rem;white-space:nowrap;border:1px solid rgba(228,255,255,.25)}
+.gx-breath-hint{margin-top:1.6rem;pointer-events:none;padding:.25rem .8rem;border-radius:8px;background:rgba(32,24,38,.85);font-size:.95rem;white-space:nowrap;border:1px solid rgba(228,255,255,.25)}
 .gx-breath-hint:empty{visibility:hidden} /* sin texto igual ocupa su lugar: el círculo no salta hacia arriba cuando aparece la indicación */
 .gx-breath-hint{min-height:1.95rem} /* la indicación siempre ocupa su alto */
 .gx-breath-hint[data-action="hold"]{border-color:#7a9a85}
@@ -126,7 +125,7 @@ body.gx-touch-on.gx-vibra-ok .gx-vibra{display:block} /* solo en celular, y si e
 .gx-key{pointer-events:auto;position:absolute;border:1px solid rgba(228,255,255,.45);background:rgba(32,24,38,.65);color:#E4FFFF;display:flex;align-items:center;justify-content:center;touch-action:none;-webkit-tap-highlight-color:transparent}
 .gx-key.on{background:rgba(242,192,99,.8);color:#201826}
 .gx-go{right:max(5%,env(safe-area-inset-right));bottom:max(8%,env(safe-area-inset-bottom));width:86px;height:86px;border-radius:50%;font-family:'Dongle',sans-serif;font-weight:700;font-size:1.3rem;line-height:1}
-.gx-touch-on .gx-breath{bottom:24%}
+.gx-touch-on .gx-breath{bottom:27%}
 .gx-touch-on .gx-orb{width:160px;height:160px}
 
 /* 7. Tarjeta con texto que se escribe: se puede pulsar para completarlo, y trae botón de continuar */
@@ -142,8 +141,9 @@ body.gx-touch-on.gx-vibra-ok .gx-vibra{display:block} /* solo en celular, y si e
 body.gx-touch-on .gx-keys--pc,body:not(.gx-touch-on) .gx-keys--touch{display:none}
 body:not(.gx-vibra-ok) .gx-keys-vibra,body:not(.gx-full-ok) .gx-keys-full{display:none}
 /* Caminar: WASD y flechas en T invertida (la tecla de arriba sobre la del medio) */
-.gx-controls .gx-dialog{max-width:min(660px,94vw)}
-.gx-keys--pc .gx-keycaps{min-width:13.4rem} /* el texto de todas las filas empieza a la misma altura que el de caminar */
+.gx-controls .gx-dialog{width:auto;max-width:min(520px,94vw);padding:32px 36px 22px}
+.gx-controls .gx-keys{width:auto;margin-inline:auto} /* la lista queda centrada en la caja (sin espacio vacío a la derecha) */
+.gx-keys--pc .gx-keycaps{min-width:7rem;justify-content:center} /* el texto de todas las filas empieza a la misma altura */
 .gx-keys-mover .gx-keycaps{align-items:center;gap:10px}
 .gx-cruz{display:grid;grid-template-columns:repeat(3,1.85rem);gap:4px}
 .gx-cruz kbd{min-width:0;padding:0}
@@ -171,3 +171,92 @@ body.gx-touch-on.gx-vibra-ok .gx-modal{padding-top:7.4rem} /* en celular hay una
 .gx-talk .gx-act{font-size:2.2rem}
 .gx-touch-on .gx-talk{bottom:auto;top:7.6rem} /* en celular: debajo de los botones de arriba (música, pantalla completa, vibración) */
 .gx-touch-on .gx-msg{top:7.6rem;font-size:1.1rem}
+/* 10. Minijuegos: colores por fase, botón "?", anuncio grande y categorías mentales rápidas */
+/* Colores del círculo según la fase (los pone ui.updateBreath en data-fase): inhalar verde azulado · sostener dorado · exhalar lila · pausa gris */
+.gx-luz-1,.gx-luz-2{transition:stop-color .5s}
+.gx-breath[data-fase="inhale"] .gx-luz-1{stop-color:#e6fbf6}.gx-breath[data-fase="inhale"] .gx-luz-2{stop-color:#5fb3a2}
+.gx-breath[data-fase="hold"] .gx-luz-1{stop-color:#fff4d6}.gx-breath[data-fase="hold"] .gx-luz-2{stop-color:#e0a83f}
+.gx-breath[data-fase="exhale"] .gx-luz-1{stop-color:#f3e9fa}.gx-breath[data-fase="exhale"] .gx-luz-2{stop-color:#9d7bc2}
+.gx-breath[data-fase="pause"] .gx-luz-1{stop-color:#eeeeee}.gx-breath[data-fase="pause"] .gx-luz-2{stop-color:#8f8f97}
+.gx-needle{transition:stroke .5s}
+.gx-breath[data-fase="inhale"] .gx-needle{stroke:#9ff0de}
+.gx-breath[data-fase="hold"] .gx-needle{stroke:#ffd27a}
+.gx-breath[data-fase="exhale"] .gx-needle{stroke:#d9bdf2}
+.gx-breath[data-fase="inhale"] .gx-label{background:rgba(31,92,82,.85)}
+.gx-breath[data-fase="hold"] .gx-label{background:rgba(120,82,18,.85)}
+.gx-breath[data-fase="exhale"] .gx-label{background:rgba(78,52,110,.85)}
+.gx-breath-hint{margin:.9rem 0 0} /* debajo del reloj, con aire entre los dos (antes quedaban pegados) */
+/* Botón "?": vuelve a abrir la explicación del minijuego */
+.gx-breath{position:absolute}
+.gx-ayuda{pointer-events:auto;position:absolute;top:3.6rem;right:-2.6rem;width:2.1rem;height:2.1rem;border-radius:50%;border:1px solid rgba(228,255,255,.5);background:rgba(32,24,38,.85);color:#E4FFFF;font-family:'Outfit',sans-serif;font-weight:700;font-size:1.05rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.gx-ayuda:hover{background:var(--color-principal,#F2C063);color:#201826}
+.gx-ayuda:focus-visible{outline:3px solid var(--color-acento,#E3D0B5);outline-offset:2px}
+/* Anuncio grande con el nombre de la técnica */
+.gx-anuncio{top:34%;left:50%;translate:-50% -50%;z-index:9;display:flex;flex-direction:column;align-items:center;gap:.3rem;padding:1.1rem 2.2rem 1.3rem;max-width:min(92vw,46rem);text-align:center;background:rgba(32,24,38,.92);border:2px solid var(--color-principal,#F2C063);border-radius:18px;box-shadow:0 0 0 6px rgba(242,192,99,.18),0 18px 50px rgba(0,0,0,.55);pointer-events:none}
+.gx-anuncio[hidden]{display:none}
+.gx-anuncio span{font-size:.95rem;letter-spacing:.18em;text-transform:uppercase;color:var(--color-principal,#F2C063)}
+.gx-anuncio strong{font-family:'Luckiest Guy',cursive;font-weight:400;font-size:clamp(1.8rem,4.6vw,3.2rem);line-height:1.05;letter-spacing:.02em;color:#E4FFFF}
+/* Categorías mentales rápidas: pop-up tipo captcha */
+.gx-cats{top:53%;left:50%;translate:-50% -50%;z-index:7;width:min(92vw,25rem);pointer-events:auto;background:#fff;border-radius:6px;box-shadow:0 14px 40px rgba(0,0,0,.5);overflow:hidden}
+.gx-cats[hidden]{display:none}
+.gx-cats-head{position:relative;background:#4a90e2;color:#fff;padding:.9rem 1.1rem;display:flex;flex-direction:column;gap:.1rem}
+/* errores: tres círculos arriba a la derecha; cada equivocación pone uno en rojo (al tercero se pierde) */
+.gx-cats-vidas{position:absolute;top:.8rem;right:1rem;display:flex;gap:.35rem}
+.gx-cats-vidas i{width:.85rem;height:.85rem;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid #fff;transition:background .2s,transform .2s}
+.gx-cats-vidas i.gx-cats-vida--mal{background:#D01F2A;border-color:#FF8A80;transform:scale(1.15)}
+.gx-cats-head span{font-size:.95rem;color:#fff;padding-right:4rem} /* no se mete debajo de los círculos de errores */
+.gx-cats-head strong{font-size:1.6rem;line-height:1.15;color:#fff}
+.gx-cats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:6px;background:#fff}
+.gx-cats-tile{aspect-ratio:1;border:0;border-radius:3px;background:#eef1f5;font-size:2rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .12s,background .12s;-webkit-tap-highlight-color:transparent}
+.gx-cats-grid--texto .gx-cats-tile{font-family:'Outfit',sans-serif;font-size:.9rem;font-weight:700;color:#201826;aspect-ratio:auto;min-height:3.6rem;padding:0 .2rem}
+.gx-cats-tile:hover{background:#dde4ee}
+.gx-cats-tile--si{background:#4a90e2!important;color:#fff;transform:scale(.9)}
+.gx-cats-tile--no{animation:gx-cats-no .35s}
+@keyframes gx-cats-no{0%,100%{transform:translateX(0);background:#eef1f5}30%{transform:translateX(-5px);background:#f2b8b5}70%{transform:translateX(5px);background:#f2b8b5}}
+.gx-touch-on .gx-cats{top:46%}
+/* Aviso destacado antes de subir al MIO */
+.gx-aviso-mio{width:100%;padding:.75rem 1rem;border-left:4px solid var(--color-advertencia,#D01F2A);background:rgba(208,31,42,.12);border-radius:6px;font-size:.95rem;line-height:1.45;font-weight:700}
+.gx-aviso-mio[hidden]{display:none}
+
+/* Línea de tiempo de la mañana (arriba, al centro) */
+.gx-linea{top:1.1rem;left:50%;translate:-50% 0;z-index:12;display:flex;align-items:center;gap:0;list-style:none;margin:0;padding:.35rem .9rem;background:rgba(32,24,38,.72);border:1px solid rgba(228,255,255,.2);border-radius:999px;pointer-events:none;transition:opacity .4s}
+.gx-linea li{display:flex;align-items:center;gap:.35rem;font-size:.78rem;color:rgba(228,255,255,.55);white-space:nowrap}
+.gx-linea li::before{content:"";width:.6rem;height:.6rem;border-radius:50%;border:2px solid rgba(228,255,255,.45);flex:none}
+.gx-linea li+li{margin-left:.55rem}
+.gx-linea li+li::after{content:none}
+.gx-linea--hecho{color:rgba(228,255,255,.8)!important}
+.gx-linea--hecho::before{background:var(--color-terceario,#799180);border-color:var(--color-terceario,#799180)!important}
+.gx-linea--ahora{color:var(--color-principal,#F2C063)!important;font-weight:700}
+.gx-linea--ahora::before{background:var(--color-principal,#F2C063);border-color:var(--color-principal,#F2C063)!important;box-shadow:0 0 8px rgba(242,192,99,.8)}
+.gx-tarjeta .gx-linea,.gx-sin-hud .gx-linea,.gx-susurro .gx-linea,.gx-negro .gx-linea{opacity:0}
+/* Barra de progreso del camino a la universidad (después del sismo, ya en la calle): una línea de lado a lado en el borde de abajo,
+   con el % encima de la punta. Se esconde en los minijuegos, las tarjetas y las frases sobre negro */
+.gx-progreso{left:0;right:0;bottom:0;height:7px;z-index:12;background:rgba(32,24,38,.65);pointer-events:none;transition:opacity .4s}
+.gx-progreso[hidden]{display:none}
+.gx-progreso-fill{height:100%;width:0;background:var(--color-principal,#F2C063);box-shadow:0 0 10px rgba(242,192,99,.75);transition:width .8s ease}
+.gx-progreso-pct{position:absolute;bottom:13px;left:0;translate:-50% 0;padding:.12rem .55rem;border-radius:999px;background:rgba(32,24,38,.8);border:1px solid rgba(242,192,99,.5);font-family:'Outfit',sans-serif;font-size:.78rem;font-weight:700;font-variant-numeric:tabular-nums;color:var(--color-principal,#F2C063);white-space:nowrap;transition:left .8s ease}
+.gx-tarjeta .gx-progreso,.gx-sin-hud .gx-progreso,.gx-susurro .gx-progreso,.gx-minijuego .gx-progreso{opacity:0}
+@media (max-width:1000px){.gx-linea li span{display:none}.gx-linea li+li{margin-left:.35rem}} /* pantallas angostas: solo los puntos */
+.gx-touch-on .gx-linea{top:3.6rem;left:auto;right:1rem;translate:none} /* celular: debajo de "Salida rápida" (arriba al centro no cabe) */
+.gx-touch-on .gx-linea li span{display:none}
+/* Terremoto en el MIO: la línea de tiempo tiembla, se apaga y se rompe en pedazos (ui.lineaSismo / ui.lineaRompe) */
+.gx-linea li{transition:opacity 2.5s,filter 2.5s}
+.gx-linea--sismo1 .gx-linea--ahora{animation:gx-linea-tiembla .09s linear infinite;opacity:.35;filter:saturate(.2) brightness(.6)}
+.gx-linea--sismo2{animation:gx-linea-tiembla .12s linear infinite;opacity:.7}
+.gx-linea--sismo2 li{filter:saturate(.4) brightness(.75)}
+.gx-linea--rota{visibility:hidden}
+@keyframes gx-linea-tiembla{0%{transform:translate(0,0)}25%{transform:translate(-3px,1px) rotate(-.6deg)}50%{transform:translate(2px,-1px)}75%{transform:translate(-1px,2px) rotate(.5deg)}}
+.gx-linea-pedazos{inset:0;z-index:13;pointer-events:none;overflow:hidden}
+.gx-linea-pedazo{position:absolute;will-change:transform,opacity}
+.gx-linea-cae{visibility:hidden}
+.gx-linea-fuera{display:none} /* después de romperse ya no deja el hueco */ /* "Ir a la Universidad" se soltó: la que cae es una copia */
+.gx-linea-ficha{position:absolute;display:flex;align-items:center;justify-content:center;background:rgba(32,24,38,.72);border:1px solid rgba(228,255,255,.2);border-radius:999px;list-style:none;will-change:transform;opacity:.7} /* igual de transparente que la barra temblando (gx-linea--sismo2) */
+.gx-linea-ficha li{display:flex;align-items:center;gap:.35rem;font-size:.78rem;white-space:nowrap;color:var(--color-principal,#F2C063);font-weight:700;filter:saturate(.4) brightness(.75)}
+.gx-linea-ficha li::before{content:"";width:.6rem;height:.6rem;border-radius:50%;background:var(--color-principal,#F2C063);flex:none}
+@media (prefers-reduced-motion:reduce){.gx-linea--sismo1 .gx-linea--ahora,.gx-linea--sismo2{animation:none}}
+
+/* Salida rápida: botón para volver a ver los controles, debajo de Parar / Seguir */
+/* Respiración: debajo de la frase de la técnica (arriba), un aviso pequeño sobre el brillo del círculo de afuera */
+.gx-respirando .gx-msg:not(:empty)::after{content:"Si el círculo de afuera empieza a brillar, prepárate: puede que debas volver a inhalar.";display:block;margin-top:.35rem;font-size:.78rem;line-height:1.3;opacity:.72}
+.gx-ver-controles{margin:16px auto 0;padding:.25rem 1.3rem;font-size:1.7rem;border:1px solid rgba(228,255,255,.35);border-radius:999px;opacity:.9}
+.gx-ver-controles:hover{opacity:1}

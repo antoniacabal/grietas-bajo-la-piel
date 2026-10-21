@@ -9,6 +9,7 @@
 
         <!-- Links -->
         <link rel="stylesheet" href="./style.css">
+        <link rel="stylesheet" href="./game/game.css"> <!-- desde el principio: si llegaba después (con el JS), los botones del juego se veían un instante antes de "10 de agosto" -->
 
         <!-- Fuentes de Google (las mismas del index) -->
         <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,7 +17,7 @@
         <link href="https://fonts.googleapis.com/css2?family=Dongle:wght@400;700&family=Luckiest+Guy&family=Outfit&display=swap" rel="stylesheet">
     </head>
 
-    <body class="sin-scroll pagina-narrativa">
+    <body class="sin-scroll pagina-narrativa gx-sin-hud">
         <main role="main">
             <!-- El juego -->
             <canvas class="webgl webgl--narrativa" aria-label="Juego Grietas bajo la piel"></canvas>
@@ -52,17 +53,27 @@
                 <!-- Vibración: solo en celulares que la permiten -->
                 <button type="button" class="gx-btn gx-vibra" data-a="vibra">Vibración: ON</button>
             </div>
+            <!-- Línea de tiempo: en qué parte de la mañana vas (ui.timeline) -->
+            <ol class="gx-linea" aria-label="Progreso de la mañana"></ol>
             <p class="gx-msg" aria-live="polite"></p>
+            <!-- Progreso del juego: solo después del sismo, para saber cuánto falta (ui.progress) -->
+            <div class="gx-progreso" role="progressbar" aria-label="Camino a la universidad" aria-valuemin="0" aria-valuemax="100" hidden>
+                <div class="gx-progreso-fill"></div>
+                <span class="gx-progreso-pct">0 %</span>
+            </div>
 
             <!-- 2. Medidor de respiración: un círculo que crece al inhalar y se encoge al exhalar (ui.js lo mueve).
                     El aro claro es el ritmo a seguir (con su franja gris clara) y el círculo de adentro es tu respiración -->
             <div class="gx-breath" hidden>
+                <!-- Orden: qué hacer (Inhalar / Sostener / Exhalar, grande) → círculo → tiempo → cómo usar el clic. El botón "?" vuelve a mostrar cómo se juega -->
+                <div class="gx-label">Respirar</div>
+                <button type="button" class="gx-ayuda" aria-label="Ver otra vez cómo se juega" title="Cómo se juega">?</button>
                 <div class="gx-orb">
                     <svg class="gx-orb-svg" viewBox="0 0 300 300" aria-hidden="true">
                         <defs>
                             <radialGradient id="gx-orb-luz" cx="50%" cy="38%" r="65%">
-                                <stop offset="0" stop-color="#f2fbf8"/>
-                                <stop offset="1" stop-color="#9dbcb0"/>
+                                <stop class="gx-luz-1" offset="0" stop-color="#f2fbf8"/>
+                                <stop class="gx-luz-2" offset="1" stop-color="#9dbcb0"/>
                             </radialGradient>
                         </defs>
                         <circle class="gx-orb-halo gx-orb-borde" cx="150" cy="150" r="146"/>
@@ -76,13 +87,12 @@
                 </div>
                 <!-- Earthing: en vez del círculo, una barra que se llena con el tiempo sobre el pasto -->
                 <div class="gx-bar"><div class="gx-bar-fill"></div></div>
-                <!-- debajo del círculo: qué hacer ahora y cuánto falta -->
-                <div class="gx-orb-text">
-                    <div class="gx-label">Respirar</div>
-                    <p class="gx-timer" aria-live="off"></p>
-                </div>
+                <p class="gx-timer" aria-live="off"></p>
                 <p class="gx-breath-hint" aria-live="polite"></p>
             </div>
+
+            <!-- Anuncio grande del minijuego que empieza (ui.announce) -->
+            <div class="gx-anuncio" aria-live="assertive" hidden><span>Autorregulación</span><strong></strong></div>
 
             <!-- 3. Fundido y tarjetas de narrativa -->
             <div class="gx-fade"></div>
@@ -116,20 +126,11 @@
                     <h2 id="gx-ctrl-t">Controles</h2>
                     <p>Acompaña a Gabriela en su mañana. Así puedes moverte por el juego:</p>
                     <ul class="gx-keys gx-keys--pc">
-                        <!-- Caminar: las teclas en forma de T invertida, como en el teclado -->
-                        <li class="gx-keys-mover">
-                            <span class="gx-keycaps">
-                                <span class="gx-cruz"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>
-                                <span class="gx-o">o</span>
-                                <span class="gx-cruz" aria-label="flechas"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span>
-                            </span>
-                            <span>para caminar.</span>
-                        </li>
-                        <li><span class="gx-keycaps"><kbd>E</kbd><kbd>Clic</kbd></span><span>para interactuar con objetos y personas.</span></li>
-                        <li><span class="gx-keycaps"><kbd>Enter</kbd><kbd>Clic</kbd></span><span>para acelerar los diálogos y pasar al siguiente.</span></li>
-                        <li><span class="gx-keycaps"><kbd>Clic</kbd><kbd>Espacio</kbd></span><span>sostenido para respirar: mantén para inhalar y retener, suelta para exhalar.</span></li>
-                        <li><span class="gx-keycaps"><kbd class="gx-kbd-icono" aria-label="Botón de pantalla completa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M4 4l6 6M20 9V4h-5M20 4l-6 6M4 15v5h5M4 20l6-6M20 15v5h-5M20 20l-6-6"/></svg></kbd><kbd>F11</kbd></span><span>para entrar o salir de pantalla completa.</span></li>
-                        <li><span class="gx-keycaps"><kbd>Esc</kbd></span><span>abre la salida rápida y pausa el juego.</span></li>
+                        <!-- Caminar: WASD en forma de T invertida, como en el teclado -->
+                        <li class="gx-keys-mover"><span class="gx-keycaps"><span class="gx-cruz"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></span><span>para caminar.</span></li>
+                        <li><span class="gx-keycaps"><kbd>Clic</kbd></span><span>para interactuar y saltar los diálogos.</span></li>
+                        <li><span class="gx-keycaps"><kbd>Espacio</kbd></span><span>sostenido en los minijuegos de respiración.</span></li>
+                        <li><span class="gx-keycaps"><kbd>F11</kbd></span><span>para entrar o salir de pantalla completa.</span></li>
                     </ul>
                     <ul class="gx-keys gx-keys--touch">
                         <li><span class="gx-keycaps"><kbd class="gx-kbd-joy" aria-label="Joystick"><span></span></kbd></span><span>arrastra el joystick de la izquierda para caminar.</span></li>
@@ -171,6 +172,7 @@
                 <div class="gx-dialog" role="dialog" aria-modal="true">
                     <h2></h2>
                     <p></p>
+                    <p class="gx-aviso-mio" hidden></p> <!-- aviso destacado (antes de subir al MIO) -->
                     <div class="gx-actions"></div>
                 </div>
             </div>
@@ -211,6 +213,8 @@
                             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5 L19 12 L12 19 M4 5 L11 12 L4 19"/></svg>
                         </button>
                     </div>
+                    <!-- volver a ver los controles sin salir de la pausa (ui.js) -->
+                    <button type="button" class="gx-act gx-ver-controles" data-act="controls"><span>Ver los controles</span></button>
                 </div>
             </div>
         </div>

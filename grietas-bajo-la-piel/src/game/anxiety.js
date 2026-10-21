@@ -18,7 +18,12 @@ const at = (lv) => { // valores para un nivel con decimales (el cambio entre niv
     return { sat: lerp(A.sat, B.sat, k), blur: lerp(A.blur, B.blur, k), pal: lerp(A.pal, B.pal, k) }
 }
 // Durante una crisis (minijuego, pop-ups del MIO) el mundo se queda a medio camino del siguiente nivel: 0.5, 1.5 o 2.5.
-// Así ganar o perder no cambia todo de golpe: desde ese punto medio baja o sube al nivel que toque
+// Así ganar o perder no cambia todo de golpe: desde ese punto medio baja o sube al nivel que toque.
+// Niveles intermedios (los estados de los minijuegos):
+//   0.5  primera crisis desde el nivel 0 (después del sismo, sin minijuegos perdidos)
+//   1.5  crisis con un minijuego perdido seguido
+//   2.5  crisis con dos perdidos seguidos (si pierde esta, llega al 3: final malo)
+
 const CRISIS = ['ANXIETY', 'BREATHING', 'BUS_EARTH', 'BUS_LOST']
 export const targetLevel = () => !runtime.postQuake || runtime.healed ? -1 : Math.min(3, (runtime.failStreak || 0) + (CRISIS.includes(runtime.state) ? 0.5 : 0))
 
