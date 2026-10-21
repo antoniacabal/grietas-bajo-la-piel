@@ -17,6 +17,7 @@
 
 // 0. Imports
 import * as THREE from 'three'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { scene, ambient, sun } from './scene.js'
 import { CONFIG, runtime } from './config.js'
 const W = CONFIG.world, HX = W.homeX
@@ -88,7 +89,7 @@ const RECTS = {
     HOUSE: [[-8.4, -0.15, -3.05, 3.05], [-5.7, -4.3, 2.9, 3.7]],                 // cuarto + hueco de la puerta (pared invisible del frente)
     HOME: [[HX - 6.4, HX + 6.2, -3.9, 3.9], [HX + 6.0, HX + 6.9, -0.85, 0.85]],  // planta baja + puerta principal (pared invisible de la derecha)
     STREET: [...ROADS, EXT, PATH],                                                // los cuatro tramos + calle eterna + caminito de la casa
-    BUS: [[W.busInteriorX - 5.6, W.busInteriorX + 5.6, -1.9, 1.9]]
+    BUS: [[W.busInteriorX - 5.6, W.busInteriorX + 5.4, -1.4, 1.9]] // pasillo del modelo del MIO (hasta las puertas del lado de la cámara)
 }
 // Punto del eje a una distancia d desde la valla, y el tramo más cercano a un punto (la cámara mira hacia donde avanza la calle)
 export function routePoint(d) {
@@ -174,6 +175,58 @@ export const pullBack = (x, z) => {
 }
 export function setGrass(v) { grassWalk = v; runtime.grassGreen = v } // Earthing: todo el pasto se satura de verde y se puede caminar por el andén
 
+// Modelos finales (FBX): cada uno tiene su versión oscura, que reemplaza a la normal cuando la ansiedad llega a lo más alto (ver updateEnvironment)
+// Paleta: los colores que traen los archivos de Blender no se usan tal cual. Cada material (por su nombre) toma un color de la paleta
+// del juego, con su pareja de tensión (como todo lo demás en mat()): así los modelos se ven como el resto del mundo y SOLO cambian
+// con el nivel de ansiedad (applyTheme). Un material que no esté en la lista toma el color de la paleta más parecido
+const PAIRS = { '#F2C063': '#580213', '#BF895A': '#580213', '#D8C8AE': '#71708A', '#A6869B': '#482642', '#A16A49': '#201826', '#799180': '#482642',
+    '#8296B7': '#201826', '#BF4E24': '#580213', '#E4FFFF': '#71708A', '#71708A': '#201826' }
+const MODEL_COLORS = {
+    Pared: '#A6869B', suelo: '#BF895A', Suelo: '#BF895A', Cafe: '#A16A49', 'Cafe claro': '#BF895A', Naranja: '#BF4E24', Colchon: '#A6869B', Cortina: '#F2C063',
+    Amarillo: '#F2C063', Alfombra: '#799180', Material: '#799180', 'Material.001': '#799180', Salida: '#71708A', 'Señaladores': '#71708A', // casa (Material: la maleta)
+    'Azul 1': '#8296B7', 'Azul 2': '#71708A', 'Azul 3': '#D8C8AE', Violeta: '#A16A49', Violeta2: '#BF895A'                                       // interior del MIO (sillas cafés de la paleta: las verdes se confundían con la camiseta y la maleta de Gabriela)
+}
+const nearestPal = (c) => { let best = '#71708A', bd = Infinity; Object.keys(PAIRS).forEach(k => { const d = new THREE.Color(k).sub(c); const e = d.r * d.r * 3 + d.g * d.g * 4 + d.b * d.b * 2; if (e < bd) { bd = e; best = k } }); return best }
+const fbx = new FBXLoader(), MODELS = []
+// modelosListos: se cumple cuando terminaron de cargar todos los FBX (main.js espera esto antes de la tarjeta "10 de agosto": si cargaban
+// mientras la tarjeta aparecía, el fundido se trababa). Con un tope de 12 s por si alguno no llega
+let pendientes = 0, avisarListos = () => {}
+export const modelosListos = new Promise(r => { avisarListos = r; setTimeout(r, 12000) })
+// Flechas del piso de la casa (Salida, Señaladores): guían por dónde se entra y se sale. Brillan siempre (laten en updateEnvironment)
+export const ARROW = new THREE.MeshBasicMaterial({ color: 0xf2c063, transparent: true, opacity: 0.9, side: THREE.DoubleSide })
+const ARROWS = /^(Salida|Se\{alador|Señalador_entrada)$/
+// shell: una copia de la malla un poco más grande, por detrás (BackSide): un brillo con la forma del objeto (no una caja)
+function shell(mesh, k = 1.1, m = OUTLINE) {
+    const g = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld); g.computeBoundingBox()
+    const c = g.boundingBox.getCenter(new THREE.Vector3()); g.translate(-c.x, -c.y, -c.z).scale(k, k, k).translate(c.x, c.y, c.z)
+    return new THREE.Mesh(g, m)
+}
+// colors: colores propios de este archivo (si un nombre se repite con otro sentido) · onLoad(o, dark): para buscar piezas del modelo ya ubicado
+function model(path, darkPath, parent, scale, x, y, z, { colors = {}, onLoad } = {}) {
+    const pair = { normal: null, dark: null }, cache = {}
+    const paint = (m) => { // material de la paleta (uno por nombre en cada modelo)
+        const calm = colors[m.name] || MODEL_COLORS[m.name] || nearestPal(m.color)
+        return cache[m.name] ||= mat(calm, PAIRS[calm] || '#201826', { flatShading: false })
+    }
+    const put = (o, dark) => {
+        const extra = []; o.traverse(c => { if (c.isLight || c.isCamera) extra.push(c) }); extra.forEach(c => c.removeFromParent()) // luces y cámaras que trae el archivo de Blender (la de la parada quemaba la escena)
+        o.traverse(c => { if (!c.isMesh) return; c.material = ARROWS.test(c.name) ? ARROW : Array.isArray(c.material) ? c.material.map(paint) : paint(c.material) })
+        o.scale.setScalar(scale); o.position.set(x, y, z); o.visible = !dark; parent.add(o); o.updateMatrixWorld(true); pair[dark ? 'dark' : 'normal'] = o
+        onLoad?.(o, dark)
+    }
+    pendientes += 2; const listo = () => { if (--pendientes === 0) avisarListos() }
+    fbx.load(path, o => { put(o, false); listo() }, undefined, listo); fbx.load(darkPath, o => { put(o, true); listo() }, undefined, listo)
+    MODELS.push(pair); return pair
+}
+// Objeto interactivo que es una pieza del modelo (armario, maleta): se esconde en las dos versiones (normal y oscura) y brilla con su forma
+function piece(names) {
+    const o = { meshes: [], v: true, userData: { outline: new THREE.Group() } }
+    o.userData.outline.visible = false
+    Object.defineProperty(o, 'visible', { get: () => o.v, set: (v) => { o.v = v; o.meshes.forEach(m => m.visible = v) } })
+    o.grab = (model, dark) => model.traverse(c => { if (!c.isMesh || !names.test(c.name)) return; o.meshes.push(c); c.visible = o.v; if (!dark) o.userData.outline.add(shell(c, 1.08)) })
+    return o
+}
+
 // 4. Utilidades de decoración: aleatorio con semilla: el mapa es igual en cada carga
 const rng = (seed => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296)(7)
 const rr = (a, b) => a + rng() * (b - a)
@@ -233,86 +286,79 @@ function makeLayer(name, items) {
 const growFrom = (m, k) => { m.visible = k > 0.01; m.scale.y = Math.max(0.001, k) * (m.userData.base ?? 1); m.position.y = m.userData.h * k / 2 + m.userData.lift * k }
 const row = (n, x0, dx, f) => Array.from({ length: n }, (_, i) => f(x0 + i * dx, i))
 
-// 7. Cuarto (segundo piso), según el plano: armario y escritorio contra la pared izquierda, cama contra la pared del fondo,
-//    alfombra al centro y la puerta en la pared invisible del frente (lleva a las escaleras)
-into('HOUSE')
-box(8.8, 0.3, 6.6, -4.2, -0.15, 0, '#BF895A', '#71708A')       // piso
-box(9.0, 0.9, 6.8, -4.2, -0.75, 0, '#A16A49', '#201826')       // base gruesa (borde visible)
-for (let i = 0; i < 5; i++) box(8.8, 0.03, 0.05, -4.2, 0.012, -2.5 + i * 1.25, '#A16A49', '#201826') // juntas de tablones
-box(3, 0.04, 2.4, -4.4, 0.02, 0.4, '#A6869B', '#482642')       // alfombra
-box(8.8, 2.8, 0.2, -4.2, 1.4, -3.3, '#A6869B', '#482642')      // pared fondo
-box(0.2, 2.8, 6.6, -8.6, 1.4, 0, '#799180', '#580213')         // pared izquierda
-box(9.0, 0.25, 0.4, -4.2, 2.9, -3.3, '#A16A49', '#201826')     // viga superior fondo
-box(0.4, 0.25, 6.8, -8.6, 2.9, 0, '#A16A49', '#201826')        // viga superior izquierda
-box(0.5, 3.2, 0.5, -8.6, 1.5, -3.3, '#BF895A', '#580213')      // poste esquina
-box(0.5, 3.2, 0.5, 0.1, 1.5, -3.3, '#BF895A', '#580213')       // poste derecho del fondo
-box(0.5, 3.2, 0.5, -8.6, 1.5, 3.3, '#BF895A', '#580213')       // poste izquierdo frontal
-box(1.6, 1.0, 0.06, -4.6, 1.7, -3.18, '#8296B7', '#201826')    // ventana
-box(0.3, 2.4, 0.3, -5.9, 1.2, 3.3, '#A16A49', '#201826'); box(0.3, 2.4, 0.3, -4.1, 1.2, 3.3, '#A16A49', '#201826') // puerta del cuarto
-box(2.1, 0.3, 0.3, -5, 2.55, 3.3, '#A16A49', '#201826')        // dintel
-furn(1.4, 0.6, 2.2, -1.5, 0.3, -2.2, '#BF895A', '#790A0E')     // cama (levantarse es una escena: no brilla)
-box(1.5, 1.1, 0.15, -1.5, 0.55, -3.22, '#A16A49', '#201826')   // cabecero
-box(1.0, 0.15, 0.5, -1.5, 0.68, -2.85, '#D8C8AE', '#71708A')   // almohada
-box(1.44, 0.08, 1.3, -1.5, 0.64, -1.65, '#A6869B', '#482642')  // cobija
-furn(0.8, 0.8, 1.8, -7.9, 0.4, -1.6, '#A16A49', '#580213')     // escritorio
-box(0.12, 0.5, 0.12, -8.05, 1.05, -2.25, '#D8C8AE', '#71708A'); box(0.35, 0.14, 0.35, -8.0, 1.32, -2.25, '#F2C063', '#580213') // lámpara
-furn(0.5, 0.45, 0.5, -6.9, 0.225, -1.6, '#BF895A', '#482642'); box(0.08, 0.6, 0.5, -6.66, 0.75, -1.6, '#BF895A', '#482642') // silla
-const wardrobe = outlined(furn(0.9, 2.3, 1.8, -7.95, 1.15, 2.2, '#BF895A', '#580213'), 0.9, 2.3, 1.8) // armario (vestirse)
-box(0.03, 2.1, 0.04, -7.49, 1.15, 2.2, '#A16A49', '#201826')   // división de las puertas del armario
-box(0.06, 0.3, 0.06, -7.47, 1.2, 1.95, '#F2C063', '#201826'); box(0.06, 0.3, 0.06, -7.47, 1.2, 2.45, '#F2C063', '#201826') // manijas
-const phone = outlined(box(0.3, 0.06, 0.5, -7.9, 0.83, -1.2, '#A6869B', '#E4FFFF'), 0.3, 0.06, 0.5)   // celular sobre el escritorio
-const bag = outlined(box(0.7, 0.9, 0.4, -3.6, 0.45, -2.95, '#799180', '#8296B7'), 0.7, 0.9, 0.4)     // maleta contra la pared
+// 7. Cuarto (segundo piso) y 8. planta baja: modelos finales de la carpeta casa (Cuarto.fbx y Sala.fbx, con sus versiones oscuras).
+//    Las medidas de abajo están en unidades del archivo (cm de Blender) y se pasan al juego con SH. Las flechas del piso marcan
+//    por dónde se entra y se sale (ya no hay puertas): pisarlas cambia de espacio
+const SH = 0.0065                                        // escala de los dos modelos (los muebles quedan del tamaño de Gabriela)
+const R0 = { x: W.houseCenterX, y: -24 * SH, z: 0 }      // dónde queda el origen del cuarto (el piso del archivo está en y = 24)
+const S0 = { x: HX - 120 * SH, y: -35 * SH, z: 0.12 }    // y el de la sala (piso en y = 35; así la sala queda centrada en HX)
+const raw = (o, x0, x1, z0, z1) => [o.x + x0 * SH, o.x + x1 * SH, o.z + z0 * SH, o.z + z1 * SH] // rectángulo del archivo → [x0, x1, z0, z1] del juego
+const rawSolid = (o, r, space) => { const [x0, x1, z0, z1] = raw(o, ...r); solid(x1 - x0 - 0.2, z1 - z0 - 0.2, (x0 + x1) / 2, (z0 + z1) / 2, undefined, space) } // margen más angosto que el general: los pasillos entre muebles quedan más anchos
+const mid2 = (r) => [(r[0] + r[1]) / 2, (r[2] + r[3]) / 2]
+// La sala es más honda hacia el frente (hacia la cámara) que en el modelo: más espacio para moverse alrededor del comedor y del sofá.
+// Se corren hacia adelante los vértices del borde del frente (piso y pared izquierda) y la flecha de la entrada
+const SALA_EXTRA = 170 // unidades del archivo (≈ 1.1 m)
+function alargarSala(o) {
+    const raiz = o.matrixWorld.clone().invert(), v = new THREE.Vector3()
+    o.traverse(c => {
+        const flecha = /^Se.alador$/.test(c.name)
+        if (!c.isMesh || !(flecha || c.name === 'Pared')) return
+        const a = raiz.clone().multiply(c.matrixWorld), b = a.clone().invert(), pos = c.geometry.attributes.position
+        for (let i = 0; i < pos.count; i++) {
+            v.fromBufferAttribute(pos, i).applyMatrix4(a) // al espacio del modelo
+            if (flecha || v.z > 450) { v.z += SALA_EXTRA; v.applyMatrix4(b); pos.setXYZ(i, v.x, v.y, v.z) }
+        }
+        pos.needsUpdate = true; c.geometry.computeBoundingBox(); c.geometry.computeBoundingSphere()
+    })
+}
+// Flechas del piso (rectángulos del juego) y dónde aparece Gabriela al llegar por cada una (un paso adentro, fuera de la flecha)
+export const DOORS = {
+    cuarto: raw(R0, 120, 353, 234, 329),               // flecha "Salida" del cuarto: baja a la sala
+    subir: raw(S0, 930, 1038, -480, -247),             // flecha de la sala que apunta hacia adentro: por ahí llegas del cuarto (y vuelves a subir)
+    calle: raw(S0, 751, 984, 391 + SALA_EXTRA, 509 + SALA_EXTRA) // flecha del frente, que apunta hacia afuera: la entrada de la casa (sale a la calle)
+}
+export const SPAWN = { cuarto: { x: R0.x - 0.3, z: 1.35 }, subir: { x: S0.x + 880 * SH, z: -2.3 }, calle: { x: S0.x + 860 * SH, z: 2.42 + SALA_EXTRA * SH } } // siempre fuera de los muebles y de la flecha
+export const SPACE_ZOOM = { HOUSE: 1.45, HOME: 0.89 }   // el cuarto es pequeño: la cámara se acerca · la sala es ancha: se aleja un poco para que no se corte
+export const BED_LIE = { x: R0.x + 242 * SH, y: 1.05, z: -0.3 }  // acostada sobre el colchón, con la cabeza en las almohadas (hacia -z)
 
-// 8. Planta baja, según el plano: cocina arriba a la izquierda, escaleras en el medio, comedor abajo a la izquierda,
-//    sala con sofá a la derecha y la puerta principal en la pared invisible de la derecha (sale a la calle)
+into('HOUSE')
+const wardrobe = piece(/^Armario$/), bag = piece(/^Maleta/)
+cur.add(wardrobe.userData.outline, bag.userData.outline)
+let bagReady = null; export const bagModel = new Promise(r => { bagReady = r }) // la maleta del modelo también es la que Gabriela lleva a la espalda (player.js)
+model('assets/casa/cuarto/Cuarto.fbx', 'assets/casa/cuarto/Cuarto_Oscuro.fbx', cur, SH, R0.x, R0.y, R0.z, {
+    onLoad: (o, dark) => {
+        wardrobe.grab(o, dark); bag.grab(o, dark)
+        if (!dark) { const m = o.getObjectByName('Maleta'); if (m) bagReady({ geometry: m.geometry.clone().applyMatrix4(m.matrixWorld), material: m.material }) }
+    }
+})
+;[[-371, -224, 47, 252], [-371, -205, -327, 39], [-201, -38, -269, -109], [122, 362, -325, 100]].forEach(r => rawSolid(R0, r)) // armario · escritorio · silla · cama
+solid(1.6, 0.3, R0.x - 0.2, -1.85) // frente a la ventana: el alféizar sale de la pared a la altura de la cara y le atravesaba la cabeza al pegarse a ella
+const phone = outlined(box(0.3, 0.05, 0.5, R0.x - 290 * SH, 1.02, -0.25, '#A6869B', '#E4FFFF'), 0.3, 0.05, 0.5) // celular sobre el escritorio (el modelo no lo trae)
+
+// 8. Planta baja: cocina al fondo, comedor a la izquierda, sala con sofá y televisor a la derecha
 into('HOME')
-box(13.2, 0.3, 8.4, HX, -0.15, 0, '#BF895A', '#71708A')        // piso
-box(13.4, 0.9, 8.6, HX, -0.75, 0, '#A16A49', '#201826')        // base gruesa
-for (let i = 0; i < 6; i++) box(13.2, 0.03, 0.05, HX, 0.012, -3.5 + i * 1.4, '#A16A49', '#201826') // tablones
-box(5.6, 0.03, 3.8, HX - 3.8, 0.02, -2.2, '#D8C8AE', '#71708A') // baldosas de la cocina
-box(13.2, 2.8, 0.2, HX, 1.4, -4.3, '#799180', '#482642')       // pared fondo
-box(0.2, 2.8, 8.4, HX - 6.7, 1.4, 0, '#A6869B', '#580213')     // pared izquierda
-box(13.4, 0.25, 0.4, HX, 2.9, -4.3, '#A16A49', '#201826'); box(0.4, 0.25, 8.6, HX - 6.7, 2.9, 0, '#A16A49', '#201826') // vigas
-box(0.5, 3.2, 0.5, HX - 6.7, 1.5, -4.3, '#BF895A', '#580213'); box(0.5, 3.2, 0.5, HX + 6.6, 1.5, -4.3, '#BF895A', '#580213'); box(0.5, 3.2, 0.5, HX - 6.7, 1.5, 4.2, '#BF895A', '#580213') // postes
-box(0.06, 1.0, 1.6, HX - 6.58, 1.6, 2.3, '#8296B7', '#201826')  // ventana del comedor
-// Cocina
-furn(4.6, 0.9, 0.8, HX - 4.3, 0.45, -3.75, '#A16A49', '#580213'); box(4.6, 0.06, 0.85, HX - 4.3, 0.93, -3.75, '#D8C8AE', '#71708A') // mesón del fondo
-furn(0.8, 0.9, 2.4, HX - 6.15, 0.45, -2.15, '#A16A49', '#580213'); box(0.85, 0.06, 2.4, HX - 6.15, 0.93, -2.15, '#D8C8AE', '#71708A') // mesón lateral
-box(4.6, 0.7, 0.4, HX - 4.3, 2.05, -4.0, '#BF895A', '#580213')  // alacenas
-box(0.9, 0.04, 0.6, HX - 3.2, 0.97, -3.75, '#201826', '#201826') // estufa
-scatter(new THREE.CylinderGeometry(0.12, 0.12, 0.03, 10), '#71708A', '#201826', [[HX - 3.42, 1.0, -3.9], [HX - 2.98, 1.0, -3.9], [HX - 3.42, 1.0, -3.6], [HX - 2.98, 1.0, -3.6]])
-furn(0.9, 2.1, 0.8, HX - 1.4, 1.05, -3.75, '#D8C8AE', '#71708A') // nevera
-furn(2.4, 0.9, 0.9, HX - 4.2, 0.45, -1.0, '#A16A49', '#580213'); box(2.6, 0.06, 1.0, HX - 4.2, 0.93, -1.0, '#D8C8AE', '#71708A') // isla
-const breakfast = new THREE.Group(); breakfast.position.set(HX - 3.4, 0.96, -0.95); cur.add(breakfast) // desayuno sobre la isla (mamá te lo da)
+model('assets/casa/sala/Sala.fbx', 'assets/casa/sala/Sala_Oscura.fbx', cur, SH, S0.x, S0.y, S0.z, { onLoad: (o) => alargarSala(o) })
+;[[-763, -296, -512, -361], [-294, -74, -514, -355], [-71, 159, -512, -352],     // mesones y nevera
+  [-446, -95, -92, 289],                                                           // sillas del comedor (por atrás pegado a los espaldares: si no, el paso entre la mesa y la cocina quedaba muy angosto)
+  [275, 522, -127, 298], [550, 699, -204, -60], [806, 911, -144, 282]             // sofá · banquito · mueble del televisor
+].forEach(r => rawSolid(S0, r))
+export const TABLE = raw(S0, -507, -33, -14, 178) // mesa del comedor: el desayuno se come estando cerca de cualquier borde
+// la mesa con un margen de 0.12 m (solid suma PAD = 0.3; por eso se le restan 0.36 al ancho y al fondo)
+// (con más margen no se podía pasar entre la punta de la mesa y el sofá)
+solid(TABLE[1] - TABLE[0] - 0.36, TABLE[3] - TABLE[2] - 0.36, (TABLE[0] + TABLE[1]) / 2, (TABLE[2] + TABLE[3]) / 2)
+export const MOM_SPOT = { x: HX - 2.0, z: -1.8 }   // mamá, en la cocina (frente a la nevera; un poco hacia ella para dejar el paso detrás de las sillas del comedor)
+const breakfast = new THREE.Group(); breakfast.position.set(TABLE[1] - 0.55, 0.96, (TABLE[2] + TABLE[3]) / 2); cur.add(breakfast) // desayuno en la punta de la mesa (mamá te lo da)
 {
     const add = (geo, c, t, x, y, z) => { const m = new THREE.Mesh(geo, mat(c, t)); m.position.set(x, y, z); breakfast.add(m) }
     add(new THREE.CylinderGeometry(0.32, 0.28, 0.04, 16), '#E4FFFF', '#71708A', 0, 0.02, 0)       // plato
     add(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 12), '#D8C8AE', '#71708A', -0.1, 0.06, 0.05) // arepa
     add(new THREE.SphereGeometry(0.07, 8, 6), '#F2C063', '#790A0E', 0.12, 0.07, -0.05)           // huevo
-    add(new THREE.CylinderGeometry(0.1, 0.08, 0.22, 10), '#BF4E24', '#580213', 0.48, 0.11, 0.05)  // chocolate
+    add(new THREE.CylinderGeometry(0.1, 0.08, 0.22, 10), '#BF4E24', '#580213', 0.05, 0.11, 0.42)  // chocolate
     const o = new THREE.Group(); o.visible = false; breakfast.add(o); breakfast.userData.outline = o // brilla solo cuando toca comer (main.js lo enciende)
-    ;[[0.42, 0.38, 0.18, 0, 0.05, 0], [0.17, 0.15, 0.32, 0.48, 0.11, 0.05]].forEach(([rt, rb, h, x, y, z]) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 16), OUTLINE); m.position.set(x, y, z); o.add(m) })
+    ;[[0.42, 0.38, 0.18, 0, 0.05, 0], [0.17, 0.15, 0.32, 0.05, 0.11, 0.42]].forEach(([rt, rb, h, x, y, z]) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 16), OUTLINE); m.position.set(x, y, z); o.add(m) })
 }
-// Escaleras (suben hacia el cuarto) y muro que las separa de la sala
-for (let i = 0; i < 8; i++) { const h = 0.3 * (i + 1); box(1.8, h, 0.36, HX + 0.4, h / 2, -1.2 - i * 0.36, '#BF895A', '#580213') }
-solid(1.9, 2.9, HX + 0.4, -2.55)
-box(0.12, 2.8, 3.1, HX + 1.42, 1.4, -2.65, '#799180', '#482642')
-// Comedor
-furn(2.4, 0.75, 1.3, HX - 4.2, 0.375, 2.3, '#A16A49', '#580213')
-;[[-4.9, 1.3, 0], [-3.5, 1.3, 0], [-4.9, 3.3, 1], [-3.5, 3.3, 1]].forEach(([dx, z, back]) => { furn(0.5, 0.45, 0.5, HX + dx, 0.225, z, '#BF895A', '#482642'); box(0.5, 0.6, 0.08, HX + dx, 0.75, z + (back ? 0.22 : -0.22), '#BF895A', '#482642') })
-scatter(new THREE.CylinderGeometry(0.2, 0.18, 0.03, 12), '#E4FFFF', '#71708A', [[HX - 4.9, 0.77, 1.95], [HX - 3.5, 0.77, 1.95], [HX - 4.9, 0.77, 2.65], [HX - 3.5, 0.77, 2.65]])
-// Sala
-box(4.2, 0.04, 3.2, HX + 4, 0.02, 0.8, '#A6869B', '#482642')    // alfombra
-furn(2.8, 0.55, 0.6, HX + 4, 0.275, -3.85, '#A16A49', '#201826'); box(2, 1.1, 0.1, HX + 4, 1.15, -4.05, '#201826', '#201826') // mueble y televisor
-furn(1.2, 0.4, 0.7, HX + 4, 0.2, -0.6, '#BF895A', '#580213')    // mesa de centro
-furn(3, 0.5, 1.1, HX + 4, 0.25, 2.0, '#799180', '#482642'); box(3, 0.8, 0.3, HX + 4, 0.65, 2.6, '#799180', '#482642') // sofá
-box(0.3, 0.7, 1.1, HX + 2.65, 0.35, 2.0, '#799180', '#482642'); box(0.3, 0.7, 1.1, HX + 5.35, 0.35, 2.0, '#799180', '#482642') // brazos del sofá
-furn(1.1, 0.5, 1.1, HX + 1.2, 0.25, 2.6, '#BF4E24', '#580213'); box(1.1, 0.7, 0.25, HX + 1.2, 0.6, 3.1, '#BF4E24', '#580213') // sillón
-box(0.5, 0.5, 0.5, HX + 6.0, 0.25, 3.4, '#A16A49', '#201826'); { const p = new THREE.Mesh(blobGeo, leafMat); p.position.set(HX + 6.0, 0.95, 3.4); p.scale.setScalar(0.5); cur.add(p) } // matera
-// Puerta principal
-box(0.3, 2.4, 0.3, HX + 6.6, 1.2, -1.1, '#A16A49', '#201826'); box(0.3, 2.4, 0.3, HX + 6.6, 1.2, 1.1, '#A16A49', '#201826'); box(0.3, 0.3, 2.5, HX + 6.6, 2.55, 0, '#A16A49', '#201826')
-box(1, 0.03, 1.6, HX + 5.9, 0.02, 0, '#A16A49', '#201826')      // tapete de la entrada
-solid(0.7, 0.7, HX - 2, -2.2)                                      // mamá (el modelo vive en npcs.js)
+solid(0.4, 0.4, MOM_SPOT.x, MOM_SPOT.z)                              // mamá (el modelo vive en npcs.js): solo su cuerpo, para no cerrar el paso entre la mesa y la cocina
+RECTS.HOUSE = [raw(R0, -350, 360, -310, 325)]; RECTS.HOME = [raw(S0, -740, 1030, -490, 505 + SALA_EXTRA)] // piso caminable (adentro de las paredes)
 
 // 9. Calle: isla flotante con campo. Sale de la casa de Gabriela y avanza en Z hasta la universidad (como en el plano)
 into('STREET')
@@ -479,8 +525,7 @@ for (let k = 0, n = 0; k < 400 && n < 35; k++) { // árboles sueltos detrás de 
 }
 
 // Paradero del MIO (la marca roja del plano)
-box(2.6, 0.12, 1.1, W.busX - 1.8, 2.3, -3.95, '#BF4E24', '#580213'); box(0.12, 2.3, 0.12, W.busX - 3, 1.15, -3.95, '#A16A49', '#201826'); box(0.12, 2.3, 0.12, W.busX - 0.6, 1.15, -3.95, '#A16A49', '#201826')
-box(2, 0.12, 0.5, W.busX - 1.8, 0.5, -4.2, '#A16A49', '#201826')
+model('assets/bus/parada/parada-mio.fbx', 'assets/bus/parada/parada-mio-oscuro.fbx', cur, 0.012, W.busX - 1.8, -0.09, -4.3) // modelo final del paradero
 
 // Universidad al final del último tramo (se aleja cuando la calle se vuelve eterna)
 const UNI_Z = GATE - 5, uniG = new THREE.Group(); uniG.position.set(UX, -0.15, UNI_Z); cur.add(uniG)
@@ -497,7 +542,10 @@ SEGS.forEach((s, i) => {
     const r = segRect(s, 0), [a0, a1] = s.axis === 'x' ? [Math.max(r[0], STREET_X0), r[1]] : [r[2], r[3]]
     for (let t = a0 + 4, j = 0; t < a1 - 2; t += 9, j++) {
         const [x, z] = s.axis === 'x' ? [t, s.z0 - 16] : [s.x0 - 16, t]
-        if (!BLOCKED.some(o => inRect(grow(o, 8), x, z)) && !nearUni(x, z)) mid.push(s.axis === 'x' ? [x, z, 6, 6 + (j * 3) % 5, 4] : [x, z, 4, 6 + (j * 3) % 5, 6])
+        const it = s.axis === 'x' ? [x, z, 6, 6 + (j * 3) % 5, 4] : [x, z, 4, 6 + (j * 3) % 5, 6]
+        // en las esquinas, los del tramo en x y los del tramo en z quedaban encimados (con una cara en el mismo plano: las texturas titilaban)
+        const choca = mid.some(([mx, mz, mw, , md]) => Math.abs(mx - x) < (mw + it[2]) / 2 + 0.6 && Math.abs(mz - z) < (md + it[4]) / 2 + 0.6)
+        if (!BLOCKED.some(o => inRect(grow(o, 8), x, z)) && !nearUni(x, z) && !choca) mid.push(it)
     }
     for (let t = a0 + 6; t < a1 - 3; t += rr(9, 12)) {
         const [x, z] = s.axis === 'x' ? [t, s.z0 - 3.5] : [s.x0 - 3.5, t]
@@ -522,8 +570,8 @@ for (let d = 6; d < ROUTE_LEN - 4; d += rr(3, 5.5)) { // a los lados de la calle
     const [x, z, s] = routePoint(d), side = rr(0, 1) < 0.5 ? -1 : 1, off = side * rr(3.8, 7.5)
     makeGhost('STREET', s.axis === 'x' ? x + rr(-1, 1) : x + off, s.axis === 'x' ? z + off : z + rr(-1, 1), Math.floor(rr(0, 10)))
 }
-;[[-7.6, -2.6], [-6.2, 2.6], [-2.6, 1.8], [-0.8, -0.4], [-5.2, -2.8], [-3.2, 2.9]].forEach(([x, z], i) => makeGhost('HOUSE', x, z, i))               // cuarto
-;[[HX - 5.6, 0.4], [HX - 1.2, 3.4], [HX + 2.6, -3.4], [HX + 5.6, 3.2], [HX - 6.1, -3.6], [HX + 3.4, 0.2]].forEach(([x, z], i) => makeGhost('HOME', x, z, i + 2)) // planta baja
+;[[-5.2, 1.8], [-4.0, -1.8], [-2.3, 1.6], [-6.2, -0.6], [-3.6, 0.4], [-4.9, -0.2]].forEach(([x, z], i) => makeGhost('HOUSE', x, z, i))               // cuarto
+;[[HX - 4.5, -1.6], [HX - 0.5, 2.8], [HX + 3.4, -2.6], [HX + 5.2, 1.0], [HX - 5.2, 2.6], [HX + 0.2, -1.2]].forEach(([x, z], i) => makeGhost('HOME', x, z, i + 2)) // planta baja
 function updateGhosts() {
     const k = runtime.postQuake && runtime.glitch >= 1 ? Math.min(1, Math.max(0, (runtime.anxiety - 0.3) / 0.55)) : 0 // nivel de falla 1 o más (sube al perder un minijuego y baja al ganar) · 0 = nada · 1 = todas las fallas
     ghosts.forEach(g => {
@@ -542,38 +590,54 @@ function updateGhosts() {
 // 10. Interior del MIO: otro espacio flotando en el vacío (entras y sales por la puerta)
 into('BUS')
 const BX = W.busInteriorX
-box(150, 0.5, 40, BX, -1.55, 0, '#799180', '#482642')             // campo bajo el MIO (ya no flota en el vacío)
-box(150, 0.1, 5.2, BX, -1.27, 0, '#71708A', '#201826')             // calle por la que avanza el MIO
-box(12.4, 0.3, 4.4, BX, -0.15, 0, '#D8C8AE', '#71708A')        // piso
-box(12.6, 0.9, 4.6, BX, -0.75, 0, '#A16A49', '#201826')        // base gruesa
-box(12.4, 0.9, 0.2, BX, 0.45, -2.2, '#2F7DAA', '#482642')      // antepecho de la pared del fondo
-;[-6, -3, 0, 3, 6].forEach(dx => box(0.3, 1.5, 0.2, BX + dx, 1.65, -2.2, '#2F7DAA', '#482642')) // pilares entre ventanas (los huecos dejan ver la ciudad)
-box(0.2, 2.4, 4.4, BX - 6.2, 1.2, 0, '#2F7DAA', '#482642')     // pared de atrás del MIO (la del frente se quitó: tapaba al conductor)
-box(0.06, 0.9, 2.2, BX - 6.08, 1.55, 0, '#D8C8AE', '#71708A')  // ventana trasera
-box(12.6, 0.25, 0.4, BX, 2.5, -2.2, '#A16A49', '#201826')      // viga superior fondo
-box(0.4, 0.25, 4.6, BX - 6.2, 2.5, 0, '#A16A49', '#201826')    // viga superior trasera
-box(0.4, 2.7, 0.4, BX + 6.2, 1.3, -2.2, '#BF895A', '#580213')  // poste esquina
-box(0.4, 2.7, 0.4, BX - 6.2, 1.3, -2.2, '#BF895A', '#580213')  // poste de la puerta
-;[-4.6, 4.6].forEach(dx => { box(0.25, 2.5, 0.25, BX + dx - 0.8, 1.25, 2.2, '#BF895A', '#580213'); box(0.25, 2.5, 0.25, BX + dx + 0.8, 1.25, 2.2, '#BF895A', '#580213'); box(1.85, 0.25, 0.25, BX + dx, 2.55, 2.2, '#A16A49', '#201826') }) // puertas laterales
-solid(0.5, 3.6, BX + 5.8, 0)                                   // cabina: no se puede pasar al puesto del conductor
-{ // volante: aro inclinado hacia el conductor, tres rayos y la columna que baja al piso
-    const wheel = new THREE.Group(), rim = mat('#D8C8AE', '#71708A'); wheel.position.set(BX + 5.55, 1.0, 0); wheel.rotation.set(0, Math.PI / 2, 0); cur.add(wheel) // claro: se distingue sobre la silueta negra del conductor
-    const tilt = new THREE.Group(); tilt.rotation.x = -0.5; wheel.add(tilt) // inclinado como en los buses
+box(150, 0.5, 40, BX, -1.35, 0, '#799180', '#482642')             // campo bajo el MIO (ya no flota en el vacío)
+box(150, 0.1, 5.2, BX, -1.07, 0, '#71708A', '#201826')             // calle por la que avanza el MIO (las ruedas del modelo la tocan)
+// El interior es el modelo final (bus.fbx), escalado al tamaño del MIO del juego: el piso queda en y = 0 y el frente (conductor) hacia +x
+const BUS_S = 0.016, BUS_X = BX + 0.128 // 0.128: el modelo no está centrado en su origen
+// Asientos del modelo (medidos sobre el FBX, en unidades del archivo): malla, centro del cojín (x, z) y hacia dónde mira quien se sienta.
+// El espaldar de casi todos queda atrás (-x): miran hacia el conductor. Las dos bancas largas se miran entre sí (una hacia +z y otra hacia -z)
+const SEAT_DEFS = [['Cube005', -244, -64, 0], ['Cube006', -149.5, -64, 0], ['Cube007', -47.5, -64, 0], ['Cube008', 49, -64, 0], // dobles junto a las ventanas
+    ['Cube009', -175, 76, 0], ['Cube011', -94, 76, 0],                                                                          // sencillos del lado de la cámara
+    ['Cube014', 153.5, -74, 1], ['Cube003', 139.5, 72.5, 2], ['Cube013', -328.5, 0.5, 0]]                                      // bancas largas y la del fondo
+export const SEAT_Y = 94 * BUS_S - 1.024 // altura del cojín (ahí se apoya quien se sienta)
+SEAT_DEFS.forEach(([name, x, z, f]) => { // brillo suave alrededor de cada asiento libre, con la forma de la silla (main.js lo enciende mientras estás de pie)
+    const glow = new THREE.Group(); glow.visible = false; cur.add(glow)
+    SEATS.push({ name, x: BUS_X + x * BUS_S, z: z * BUS_S, face: [Math.PI / 2, 0, Math.PI][f], taken: false, glow })
+})
+const LLANTA = mat('#482642', '#201826', { flatShading: false })
+model('assets/bus/interior/bus.fbx', 'assets/bus/interior/bus_Oscuro.fbx', cur, BUS_S, BUS_X, -1.024, 0, {
+    colors: { 'Azul 1': '#2F7DAA' }, // el mismo azul del MIO por fuera (props.bus)
+    onLoad: (o, dark) => {
+        o.traverse(c => { if (c.isMesh && /^Cilindro/.test(c.name)) c.material = LLANTA }) // llantas morado oscuro (compartían el material de la carrocería)
+        if (dark) return
+        SEATS.forEach(s => {
+            const m = o.getObjectByName(s.name); if (!m) return
+            s.glow.add(shell(m, 1.12, SOFT))
+            // la silla también es un obstáculo: antes Gabriela podía pararse dentro de las bancas (y quedaba metida hasta la cintura).
+            // Margen pequeño (solid suma PAD = 0.3; aquí queda 0.1) para no cerrar el pasillo. Sentarse no cambia: se hace desde el pasillo
+            const b = new THREE.Box3().setFromObject(m)
+            solid(b.max.x - b.min.x - 0.4, b.max.z - b.min.z - 0.4, (b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, undefined, 'BUS')
+        })
+    }
+})
+solid(1.4, 1.4, BUS_X + 4.41, -1.0) // puesto del conductor: no se puede pasar
+{ // volante frente al conductor (el modelo no lo trae): aro inclinado, tres rayos y la columna que baja al piso
+    const wheel = new THREE.Group(), rim = mat('#D8C8AE', '#71708A'); wheel.position.set(BUS_X + 5.1, 1.0, -1.0); wheel.rotation.set(0, Math.PI / 2, 0); cur.add(wheel)
+    const tilt = new THREE.Group(); tilt.rotation.x = -0.5; wheel.add(tilt)
     tilt.add(new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.045, 8, 24), rim))
     ;[0, 2.1, 4.2].forEach(a => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), rim); s.position.set(Math.sin(a) * 0.16, Math.cos(a) * 0.16, 0); s.rotation.z = -a; tilt.add(s) })
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 1.0, 8), mat('#A16A49', '#201826')); col.position.set(BX + 5.77, 0.5, 0); col.rotation.z = 0.35; cur.add(col)
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 1.0, 8), mat('#A16A49', '#201826')); col.position.set(BUS_X + 5.32, 0.5, -1.0); col.rotation.z = 0.35; cur.add(col)
 }
-;[-3.6, -1.2, 1.2, 3.6].forEach((dx, i) => {                     // bancas: fila del fondo y fila de adelante
-    const c = i % 2 ? ['#A6869B', '#482642'] : ['#799180', '#580213']
-    const seat = (z, back, bz, bh, face) => { // banca con su brillo suave (main.js lo enciende en las libres mientras estás de pie)
-        const m = outlined(furn(2, 0.45, 0.7, BX + dx, 0.225, z, ...c), 2, 0.45, 0.7, 0.12, 0, SOFT); box(2, bh, 0.12, BX + dx, back, bz, ...c)
-        SEATS.push({ x: BX + dx, z, face, taken: false, glow: m.userData.outline })
-    }
-    seat(-1.55, 0.8, -1.95, 0.7, 0)
-    if (Math.abs(dx) < 3) seat(1.55, 0.72, 1.95, 0.55, Math.PI) // sin banca junto a las puertas
-})
-const poleMat = mat('#D8C8AE', '#71708A'), poleGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.3, 8)
-;[-2.4, 0, 2.4].forEach(dx => { const p = new THREE.Mesh(poleGeo, poleMat); p.position.set(BX + dx, 1.15, 0); cur.add(p) })
+export const DRIVER_SEAT = { x: BUS_X + 278 * BUS_S, z: -62.5 * BUS_S }
+// Puertas del MIO (donde el piso del modelo baja en escalón, del lado de la cámara): después del sismo te puedes parar y bajarte por cualquiera.
+// Cada una lleva una flecha brillante en el piso (como las de la casa) que main.js muestra mientras estás de pie
+export const BUS_DOORS = [[-283, -198], [-49, 44], [251, 337]].map(([a, b]) => [BUS_X + a * BUS_S, BUS_X + b * BUS_S])
+export const busExits = new THREE.Group(); busExits.visible = false; cur.add(busExits)
+{
+    const tri = new THREE.Shape(); tri.moveTo(-0.38, 0); tri.lineTo(0.38, 0); tri.lineTo(0, 0.5); tri.closePath() // punta hacia afuera del MIO (+z)
+    const geo = new THREE.ShapeGeometry(tri); geo.rotateX(Math.PI / 2)
+    BUS_DOORS.forEach(([x0, x1]) => { const m = new THREE.Mesh(geo, ARROW); m.position.set((x0 + x1) / 2, 0.03, 1.05); busExits.add(m) })
+}
 
 // Ciudad que se ve por las ventanas del MIO: se desplaza para dar sensación de viaje
 const CITY_P = 48, cityG = new THREE.Group(); cur.add(cityG)
@@ -597,15 +661,14 @@ const cityBlocks = []; let nb = 0; for (let x = 0; x < CITY_P; x += rr(2.4, 3.4)
 const V = (x, z) => new THREE.Vector3(x, 0, z)
 const S = GROUPS.STREET
 export const props = {
-    cama: { pos: V(-2.8, -1.9), mesh: null, // pos: donde queda de pie al levantarse (a la izquierda de la cama, junto a la maleta)
-        mark: { x: -1.5, y: 2.1, z: -2.2 } },
-    armario: { pos: V(-6.6, 2.2), mesh: wardrobe, mark: { x: -7.95, y: 3.1, z: 2.2 } },
-    celular: { pos: V(-6.1, -0.5), mesh: phone },
-    maleta: { pos: V(-3.6, -1.9), mesh: bag },
-    puerta: { pos: V(-5, 2.6), mesh: null, mark: { x: -5, y: 3.1, z: 3.3 } },
-    mama: { pos: V(HX - 2, -0.5), mesh: null, mark: { x: HX - 2, y: 2.7, z: -2.2 } }, // mamá no brilla: solo la flecha encima
-    desayuno: { pos: V(HX - 3.4, -0.5), mesh: breakfast, mark: { x: HX - 3.4, y: 1.9, z: -0.95 } },
-    salida: { pos: V(HX + 5.8, 0), mesh: null, mark: { x: HX + 6.6, y: 3.0, z: 0 } },
+    cama: { pos: V(-3.93, -1.1), mesh: null, mark: { x: -2.63, y: 2.1, z: -0.7 } },  // pos: donde queda de pie al levantarse (junto a la cabecera, entre la cama y la silla del escritorio)
+    armario: { pos: V(-5.1, 0.97), mesh: wardrobe, mark: { x: -6.13, y: 3.2, z: 0.97 } },
+    celular: { pos: V(-4.95, 0.0), mesh: phone, mark: { x: -6.09, y: 1.65, z: -0.25 } },
+    maleta: { pos: V(-2.68, 1.25), mesh: bag, mark: { x: -2.68, y: 1.8, z: 0.24 } },   // la maleta está sobre la cama, a los pies
+    puerta: { pos: V(...mid2(DOORS.cuarto)), mesh: null, mark: { x: mid2(DOORS.cuarto)[0], y: 1.4, z: mid2(DOORS.cuarto)[1] } }, // flecha del piso que baja a la sala
+    mama: { pos: V(MOM_SPOT.x, MOM_SPOT.z), mesh: null, mark: { x: MOM_SPOT.x, y: 2.7, z: MOM_SPOT.z } }, // mamá no brilla: solo la flecha encima
+    desayuno: { pos: V(TABLE[1] + 0.5, (TABLE[2] + TABLE[3]) / 2), mesh: breakfast, rect: TABLE, mark: { x: breakfast.position.x, y: 1.9, z: breakfast.position.z } }, // rect: se come estando cerca de la mesa (no en un punto exacto)
+    salida: { pos: V(...mid2(DOORS.calle)), mesh: null, mark: { x: mid2(DOORS.calle)[0], y: 1.4, z: mid2(DOORS.calle)[1] } },   // flecha de la entrada
     // MIO por fuera (temporal). rect = huella en planta (para medir la cercanía)
     bus: { pos: V(W.busX, 1), mesh: outlined(box(6, 2, 2.2, W.busX + 4, 1, -1.8, '#2F7DAA', '#482642', S), 6, 2, 2.2, 0.2, 0, SOFT),
         rect: [W.busX + 1, W.busX + 7, -2.9, -0.7], mark: { x: W.busX + 4, y: 3.1, z: -1.8 } }
@@ -615,7 +678,6 @@ props.bus.mesh.add(box(5.6, 0.6, 0.05, 0, 0.4, 1.12, '#D8C8AE', '#71708A', props
 // El MIO frente a la universidad: solo aparece si aguantaste el viaje completo (y entonces desaparece el del paradero)
 export const uniBus = props.bus.mesh.clone(); uniBus.rotation.y = Math.PI / 2; uniBus.position.set(UX + 1.9, 1, GATE + 10); uniBus.visible = false; S.add(uniBus)
 uniBus.children.forEach(c => { if (c.material === SOFT) c.visible = false })
-solid(0.7, 0.4, -3.6, -2.95, () => props.maleta.mesh.visible, 'HOUSE')
 solid(6, 2.2, W.busX + 4, -1.8, () => props.bus.mesh.visible, 'STREET')
 solid(2.2, 6, UX + 1.9, GATE + 10, () => uniBus.visible, 'STREET')
 export function resetProps() { Object.values(props).forEach(p => { if (p.mesh) p.mesh.visible = true }); uniBus.visible = false }
@@ -650,7 +712,7 @@ export const atUniversity = (x, z) => runtime.space === 'STREET' && Math.abs(x -
 export const nearUniversity = (x, z) => runtime.space === 'STREET' && x > UX - 4 && z < GATE - ext + 8
 function updateEndless(dt) {
     const E = CONFIG.street, a = runtime.anxiety
-    const k = runtime.space === 'STREET' ? Math.min(1, Math.max(0, (a - E.from) / Math.max(0.01, E.full - E.from))) : 0
+    const k = 0 // desactivada: la universidad que se alejaba con la ansiedad se veía rara (antes: según a entre E.from y E.full)
     endK += (k - endK) * Math.min(1, dt * 0.8)
     ext = E.endless * endK
     uniG.position.z = UNI_Z - ext
@@ -666,7 +728,7 @@ const cold = new THREE.Color(0x8899bb), warm = new THREE.Color(0xffd9a0)
 let T = 0, cityOff = 0, grassK = 0, grassWas = false
 export function updateEnvironment(dt = 0) {
     const p = runtime.envProgress, a = runtime.anxiety
-    T += dt; OUTLINE.opacity = 0.7 + 0.3 * Math.sin(T * 5); SOFT.opacity = 0.28 + 0.14 * Math.sin(T * 3)
+    T += dt; OUTLINE.opacity = 0.7 + 0.3 * Math.sin(T * 5); SOFT.opacity = 0.28 + 0.14 * Math.sin(T * 3); ARROW.opacity = 0.7 + 0.3 * Math.sin(T * 4) // las flechas del piso de la casa laten
     if (runtime.space === 'BUS') { // el MIO solo avanza cuando te sientas y va frenando mientras el sismo crece
         if (runtime.busMoving) cityOff = (cityOff + dt * (2.5 + a * 3) * (1 - Math.min(1, runtime.quake))) % CITY_P
         cityG.position.x = -cityOff
@@ -690,6 +752,8 @@ export function updateEnvironment(dt = 0) {
     })
     const pal = runtime.palette ?? a, key = pal + (runtime.levelVis ?? -1) * 10 // la paleta sigue el nivel de ansiedad (anxiety.js), no solo la crisis del momento
     if (Math.abs(key - lastA) > 0.002) { lastA = key; applyTheme(pal) }
+    const dark = (runtime.levelVis ?? -1) > 2.75 // en el nivel más alto de ansiedad (3), los modelos finales cambian a su versión oscura
+    MODELS.forEach(m => { if (m.normal) m.normal.visible = !dark; if (m.dark) m.dark.visible = dark })
     updateEndless(dt)
 
     const gt = runtime.grassGreen ? 1 : 0 // en el Earthing el pasto se pone más verde, pero sin pasarse de la saturación del nivel de ansiedad (antes quedaba más vivo que el resto)

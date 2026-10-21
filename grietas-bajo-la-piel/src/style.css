@@ -13,19 +13,22 @@
         5.1 Titulos
         5.2 Escena
         5.3 Contenido
-        5.4 Articulos
-        5.5 Mapa de apoyo
-        5.6 Recursos
-            5.6.1 Imagenes
-        5.7 Tarjetas
-        5.8 Teléfonos
-        5.9 Avisos
-        5.10 Linea de ayuda
+        5.4 Animación
+        5.5 Articulos
+        5.6 Mapa de apoyo
+        5.7 Recursos
+            5.7.1 Imagenes
+            5.7.2 Videos
+        5.8 Tarjetas
+        5.9 Teléfonos
+        5.10 Avisos
+        5.11 Linea de ayuda
         5.12 Advertencia
-        5.12 Brigada Topos
-        5.13 Página de respiración
-        5.14 Organización Mundial de la Salud
-        5.15 Página de prevención
+        5.13 Brigada Topos
+        5.14 Página de respiración
+        5.15 Organización Mundial de la Salud
+        5.16 Página de prevención
+        5.17 Mapa
     6. Footer
     7. Reactive
 
@@ -57,6 +60,40 @@
 }
 
 /* 1. Tipografias ----------------- */
+/* Fuentes de terremoto para el nombre del proyecto ("Grietas bajo la piel"), en todas las páginas: */
+@font-face { font-family: "Broken Drive"; src: url("./fuentes/broken-drive.otf") format("opentype"); font-display: block; }
+@font-face { font-family: "Crashcourse BB"; src: url("./fuentes/crashcourse-bb.otf") format("opentype"); font-display: block; }
+
+/* Nombre del proyecto. En el header va en una sola línea ("Grietas" un poco más grande) */
+.titulo-marca{
+    font-family: "Broken Drive", "Luckiest Guy", cursive;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
+}
+.titulo-marca .titulo-grietas{
+    font-family: "Crashcourse BB", "Luckiest Guy", cursive;
+    font-size: 1.5em;
+    letter-spacing: 0.01em;
+}
+/* .titulo-principal */
+.titulo-marca .titulo-resto{ font-family: "Broken Drive", "Luckiest Guy", cursive; }
+.titulo-marca--apilado{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.14em;
+}
+.titulo-marca--apilado .titulo-grietas{ font-size: 1em; line-height: 0.85; }
+.titulo-marca--apilado .titulo-resto{
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 0.4em;
+    line-height: 0.835;
+    position: relative;
+    top: 0.33em;
+}
+
 .titulo-principal{
     font-family: "Luckiest Guy", cursive;
     font-weight: 400;
@@ -107,8 +144,15 @@ p{
 }
 
 #titulo-header{
-    font-size: 20px;
+    font-size: 26px; /* más grande: "bajo la piel" se lee mejor */
     text-decoration: none;
+}
+
+#titulo-header .titulo-resto{
+    font-size: 1.33em; /* "bajo la piel" tan alto como "Grietas" (de borde a borde de las letras) */
+    position: relative;
+    top: 0.03em;
+    margin-left: 0.1em; /* el espacio entre "Grietas" y "bajo" queda igual al de entre "bajo" y "la" */
 }
 
     /* 2.1 Menú */
@@ -118,7 +162,7 @@ p{
         z-index: 30;
     }
 
-    #cabecera-principal .menu /* el menú va a la derecha, después del título */
+    #cabecera-principal .menu
     {
         margin-left: auto;
         display: flex;
@@ -332,9 +376,14 @@ html, body
     min-height: 100vh;
 }
 
-html, body{
+html{
     max-width: 100%;
     overflow-x: hidden;
+}
+
+body{
+    max-width: 100%;
+    overflow-x: clip; /* clip y no hidden: con hidden el body se volvía otro contenedor con scroll (aparecía una segunda barra y un espacio debajo del footer) */
 }
 
 html
@@ -475,7 +524,7 @@ main
 
     /* 5.2 Escena */
     .escena-contenido .titulo-principal{
-        font-size: 3.5rem;
+        font-size: clamp(4.6rem, 8vw, 7.2rem);
         text-align: left;
     }
 
@@ -508,9 +557,9 @@ main
     .escena-canvas
     {
         position: relative;
-        flex: 1 1 54%;
+        flex: 1 1 62%;
         max-width: none;
-        height: 75%;
+        height: 92%; /* más espacio para la muestra */
         min-width: 0;
     }
 
@@ -622,7 +671,7 @@ main
     {
         position: relative;
         z-index: 1;
-        flex: 1 1 46%;
+        flex: 1 1 38%;
         max-width: 620px;
         display: flex;
         flex-direction: column;
@@ -653,7 +702,25 @@ main
         padding: 48px var(--padding-pagina);
     }
 
-    /* 5.4 Articulos */
+    /* 5.4 Animación: techo que se derrumba con el scroll (index). Debajo de la muestra la página sigue oscura; (script.js, sección 7) */
+    .pagina-inicio { --color-velo: var(--color-escena); } /* el techo es del color de la escena: sin franja entre los dos */
+    .derrumbe-espacio { height: 60vh; flex: none; margin-top: -2px; } /* -1px: se monta sobre la escena (sin rendija entre las dos) */ /* espacio extra para ver el derrumbe antes de los recursos (el alto exacto lo pone script.js) */
+    .derrumbe { position: fixed; top: 0; left: 0; z-index: 1100; pointer-events: none; }
+    .derrumbe-activo .pagina-inicio .escena::after { display: none; } /* la escena sigue de largo en el techo: sin degradado (dejaba una línea en la unión) */
+    .pagina-inicio .contenido { padding-top: 0px; } /* los recursos empiezan justo debajo del hueco del derrumbe */
+
+    /* Flecha hacia abajo (script.js, 7.1): aparece si la persona se queda quieta antes de llegar a los recursos y da un saltito */
+    .flecha-abajo { position: fixed; left: 50%; bottom: 22px; z-index: 1200; width: 52px; height: 52px; margin-left: -26px; padding: 0; border: 2px solid var(--color-principal); border-radius: 50%; background: rgba(32, 24, 38, 0.75); color: var(--color-principal); cursor: pointer; opacity: 0; visibility: hidden; transition: opacity 0.5s, visibility 0.5s; }
+    .flecha-abajo svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; margin-top: 3px; }
+    .flecha-abajo--ver { opacity: 1; visibility: visible; animation: flecha-salto 1.6s ease-in-out infinite; }
+    .flecha-abajo:focus-visible { outline: 3px solid var(--color-acento); outline-offset: 3px; }
+    /* la página entera salta con la flecha (el header, el main y el footer; no el body, para no mover lo que va fijo en pantalla) */
+    .pagina-salta #cabecera-principal, .pagina-salta main, .pagina-salta .footer { animation: pagina-salto 1.6s ease-in-out infinite; }
+    @keyframes pagina-salto { 0%, 60%, 100% { transform: translateY(0); } 20% { transform: translateY(-9px); } 40% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    @media (prefers-reduced-motion: reduce) { .pagina-salta #cabecera-principal, .pagina-salta main, .pagina-salta .footer, .flecha-abajo--ver { animation: none; } }
+    @keyframes flecha-salto { 0%, 60%, 100% { transform: translateY(0); } 20% { transform: translateY(-12px); } 40% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+    /* 5.5 Articulos */
     .articulo-recursos
     {
         text-align: center;
@@ -735,7 +802,47 @@ main
         background: linear-gradient(to top, rgba(32, 24, 38, 0.8), rgba(32, 24, 38, 0.15) 55%, transparent);
     }
 
-    /* 5.5 Mapa de apoyo */
+    .context, .carusel, main > article
+    {
+        padding-left: var(--padding-pagina);
+        padding-right: var(--padding-pagina);
+    }
+
+    .context
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 48px;
+        padding-top: 48px;
+        padding-bottom: 24px;
+    }
+
+    .context .articulo-texto
+    {
+        flex: 1 1 0;
+        min-width: 0;
+        text-align: left;
+    }
+
+    .context ul
+    {
+        margin-top: 4px;
+        padding-left: 1.4rem;
+    }
+
+    .context li
+    {
+        font-family: "Outfit", sans-serif;
+        font-size: var(--tamano-texto);
+        color: var(--color-texto);
+    }
+
+    .context li + li
+    {
+        margin-top: 8px;
+    }
+
+    /* 5.6 Mapa de apoyo */
     .articulo-mapa
     {
         --tipo-psicologica: #A6869B;
@@ -752,6 +859,737 @@ main
     .articulo-mapa [data-tipo="apoyo"] { --tipo: var(--tipo-apoyo); }
     .articulo-mapa .mapa-linea[data-franja="verde"] { --tipo: var(--color-terceario); }
 
+/* 5.7 Recursos */
+
+    main > article /* menos espacio entre artículos (antes 44px arriba y abajo: quedaba un hueco grande) */
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding-top: 22px;
+        padding-bottom: 22px;
+    }
+
+    .decoracion-titulo + article
+    {
+        padding-top: 40px;
+    }
+
+    main > article:last-of-type
+    {
+        padding-bottom: 64px;
+    }
+
+    .recurso-cabecera
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .recurso-subseccion
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .recurso-subseccion + .recurso-subseccion
+    {
+        margin-top: 12px;
+    }
+
+    .recurso-texto
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-width: 80ch;
+    }
+
+    .recurso-nota
+    {
+        max-width: 80ch;
+    }
+
+    .recurso-split
+    {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+        gap: 40px;
+        align-items: stretch;
+    }
+
+    .recurso-split-contenido
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+        min-width: 0;
+    }
+
+    .recurso-split-contenido .recurso-texto
+    {
+        max-width: none;
+    }
+
+        /* 5.7.1 Imagenes */
+        .imagen-apoyo
+        {
+            position: relative;
+            min-height: 260px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--color-principal);
+        }
+
+        .imagen-apoyo img
+        {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* 5.7.2 Videos de las técnicas (anclaje, grounding, meditación caminando) */
+        .recurso-video { width: 100%; max-width: 980px; margin: 24px auto 8px; } /* más grandes y centrados */
+        .recurso-video video { display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; background: #000; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18); }
+        .recurso-video figcaption { margin-top: 10px; font-family: "Outfit", sans-serif; font-size: 0.95rem; text-align: center; opacity: 0.8; }
+
+    /* 5.8 Tarjetas */
+    .tarjetas
+    {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 28px;
+        list-style: none;
+    }
+
+    .tarjetas--tres
+    {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .tarjetas--cinco
+    {
+        grid-template-columns: repeat(5, 1fr);
+    }
+
+    .tarjeta
+    {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 18px 20px 20px;
+        border: 1.5px solid var(--color-soporte-oscuro);
+        border-radius: 12px;
+        background: var(--color-soporte-claro);
+    }
+
+    .tarjeta::before
+    {
+        content: "";
+        position: absolute;
+        inset: 7px -7px -7px 7px;
+        z-index: -1;
+        border-radius: 12px;
+        background: var(--color-tarjeta-sombra);
+    }
+
+    .tarjeta--verde::before,
+    .tarjeta--alerta::before
+    {
+        background: var(--color-tarjeta-sombra);
+    }
+
+    .tarjeta .subtitulo
+    {
+        font-size: 32px;
+        font-weight: 700;
+    }
+
+    .tarjeta ul
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-left: 1.2rem;
+    }
+
+    .tarjeta li
+    {
+        font-family: "Outfit", sans-serif;
+        font-size: var(--tamano-texto);
+        color: var(--color-texto);
+    }
+
+    .tarjeta li::marker
+    {
+        color: var(--color-atencion);
+    }
+
+    .tarjeta-numero
+    {
+        display: grid;
+        place-items: center;
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border: 1.5px solid var(--color-soporte-oscuro);
+        border-radius: 50%;
+        background: var(--color-principal);
+        color: var(--color-soporte-oscuro);
+        font-family: "Luckiest Guy", cursive;
+        font-size: 1.05rem;
+        line-height: 1;
+    }
+
+    /* 5.9 Teléfonos */
+    .telefonos
+    {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 20px;
+        align-content: start;
+        list-style: none;
+    }
+
+    .telefono
+    {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 12px 16px 14px;
+        border: 1.5px solid var(--color-soporte-oscuro);
+        border-radius: 10px;
+        background: var(--color-soporte-claro);
+    }
+
+    .telefono::before
+    {
+        content: "";
+        position: absolute;
+        inset: 5px -5px -5px 5px;
+        z-index: -1;
+        border-radius: 10px;
+        background: var(--color-tarjeta-sombra);
+    }
+
+    .telefono-numero
+    {
+        font-family: "Dongle", sans-serif;
+        font-weight: 700;
+        font-size: 44px;
+        line-height: 0.85;
+        color: var(--color-atencion);
+    }
+
+    .telefono p
+    {
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+
+    .recurso-split--telefonos
+    {
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    }
+
+    /* 5.10 Avisos */
+    .aviso
+    {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 20px 24px 22px;
+        border: 1.5px solid var(--color-soporte-oscuro);
+        border-radius: 12px;
+        background: var(--color-soporte-claro);
+    }
+
+    .aviso::before
+    {
+        content: "";
+        position: absolute;
+        inset: 7px -7px -7px 7px;
+        z-index: -1;
+        border-radius: 12px;
+        background: var(--color-tarjeta-sombra);
+    }
+
+    .aviso ul
+    {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding-left: 1.2rem;
+    }
+
+    .aviso li
+    {
+        font-family: "Outfit", sans-serif;
+        font-size: var(--tamano-texto);
+        color: var(--color-texto);
+    }
+
+    .aviso li::marker
+    {
+        color: var(--color-atencion);
+    }
+
+    /* 5.11 Linea de ayuda */
+    .linea-ayuda
+    {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 20px 28px;
+        border-radius: 12px;
+        background: var(--color-soporte-oscuro);
+    }
+
+    .linea-ayuda p
+    {
+        color: var(--color-soporte-claro);
+    }
+
+    .linea-numero
+    {
+        flex: none;
+        font-family: "Luckiest Guy", cursive;
+        font-size: 3.5rem;
+        line-height: 1;
+        color: var(--color-principal);
+    }
+
+    /* 5.12 Advertencia */
+    html.modal-abierto
+    {
+        overflow: hidden;
+        scrollbar-gutter: stable;
+    }
+
+    .advertencia
+    {
+        margin: auto;
+        padding: 0;
+        width: 100%;
+        max-width: min(680px, 92vw);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        background: var(--color-soporte-oscuro);
+        color: var(--color-soporte-claro);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+    }
+
+    .advertencia::backdrop
+    {
+        background: rgba(10, 5, 14, 0.78);
+    }
+
+    .advertencia[open]::backdrop
+    {
+        animation: advertencia-fondo 0.25s ease-out;
+    }
+
+    @keyframes advertencia-fondo
+    {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .advertencia.sacudir
+    {
+        animation: advertencia-sacudida 0.45s ease-in-out;
+    }
+
+    @keyframes advertencia-sacudida
+    {
+        0%   { transform: translateX(0); border-color: var(--color-advertencia); }
+        15%  { transform: translateX(-12px); }
+        30%  { transform: translateX(10px); }
+        45%  { transform: translateX(-8px); }
+        60%  { transform: translateX(6px); }
+        75%  { transform: translateX(-3px); }
+        100% { transform: translateX(0); border-color: rgba(255, 255, 255, 0.12); }
+    }
+
+    @keyframes advertencia-destello
+    {
+        0%, 100% 
+            { 
+                border-color: rgba(255, 255, 255, 0.12); 
+                box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); 
+            }
+        30%, 70% 
+            { 
+                border-color: var(--color-advertencia); 
+                box-shadow: 0 0 0 4px rgba(208, 31, 42, 0.45), 0 24px 64px rgba(0, 0, 0, 0.55); 
+            }
+    }
+
+    .advertencia-caja
+    {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 40px 40px 28px;
+    }
+
+    .advertencia-icono
+    {
+        width: 88px;
+        height: auto;
+        color: var(--color-advertencia-icono);
+    }
+
+    .advertencia-icono .exclamacion
+    {
+        fill: var(--color-soporte-oscuro);
+    }
+
+    .advertencia-titulo
+    {
+        font-size: 4.5rem;
+        line-height: 0.9;
+        text-align: center;
+        color: var(--color-advertencia);
+    }
+
+    .advertencia-texto
+    {
+        width: 100%;
+        font-size: 0.95rem;
+        line-height: 1.55;
+        color: var(--color-soporte-claro);
+    }
+
+    .advertencia-subtitulo
+    {
+        width: 100%;
+        margin-top: 4px;
+        font-size: 2rem;
+        line-height: 0.9;
+        color: var(--color-soporte-claro);
+    }
+
+    .advertencia-lista
+    {
+        column-count: 2;
+        column-width: 15rem;
+        column-gap: 32px;
+        width: 100%;
+        list-style: none;
+    }
+
+    .advertencia-lista li
+    {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 8px;
+        break-inside: avoid;
+        font-family: "Outfit", sans-serif;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        color: var(--color-soporte-claro);
+    }
+
+    .advertencia-lista li::before
+    {
+        content: "";
+        flex: none;
+        width: 8px;
+        height: 8px;
+        margin-top: 0.4em;
+        border-radius: 2px;
+        background: var(--color-advertencia);
+    }
+
+    .advertencia-aviso
+    {
+        display: none;
+        width: 100%;
+        padding: 12px 16px;
+        border-left: 4px solid var(--color-acento);
+        border-radius: 6px;
+        background: rgba(242, 192, 99, 0.12);
+    }
+
+    .advertencia-aviso-titulo
+    {
+        font-size: 1.9rem;
+        line-height: 0.9;
+        color: var(--color-acento);
+    }
+
+    .advertencia-aviso p
+    {
+        margin-top: 4px;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        color: var(--color-soporte-claro);
+    }
+
+    .advertencia-acciones
+    {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+        margin-top: 16px;
+    }
+
+    .advertencia-accion
+    {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 10px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-family: "Dongle", sans-serif;
+        font-weight: 700;
+        font-size: 2.75rem;
+        line-height: 1;
+        text-decoration: none;
+        transition: color 0.2s;
+    }
+
+    .advertencia-accion--volver { color: var(--color-soporte-claro); }
+    .advertencia-accion--seguir { color: var(--color-soporte-claro); }
+
+    .advertencia-accion:hover
+    {
+        color: var(--color-acento);
+    }
+
+    .advertencia-accion:focus-visible
+    {
+        outline: 3px solid var(--color-acento);
+        outline-offset: 2px;
+        border-radius: 6px;
+    }
+
+    .advertencia-accion svg
+    {
+        width: 32px;
+        height: 32px;
+        color: var(--color-advertencia-flecha);
+        transition: transform 0.2s;
+    }
+
+    .advertencia-accion--volver:hover svg { transform: translateX(-4px); }
+    .advertencia-accion--seguir:hover svg { transform: translateX(4px); }
+
+    /* 5.13 Brigada Topos */
+    .seccion-topos
+    {
+        --topos-rojo: #D10A0A;       /* rojo intenso de la franja y los botones de topos.mx */
+        --topos-coral: #D9423B;      /* rojo coral del pie de página de topos.mx */
+        --topos-carbon: #121212;     /* negro de la sección de operativos */
+        --topos-texto: #FF6A5F;      /* rojo claro para textos sobre negro (el rojo puro casi no se lee) */
+        position: relative;
+        margin-top: 40px; /* mismo aire que la sección de Headspace antes del patrocinador */
+        color: var(--color-soporte-claro);
+        background: var(--topos-carbon);
+        box-shadow: 0 0 0 100vmax var(--topos-carbon); /* fondo de borde a borde aunque el artículo tenga margen lateral */
+        clip-path: inset(0 -100vmax);
+        border-top: 8px solid var(--topos-rojo);
+        border-bottom: 8px solid var(--topos-coral);
+    }
+
+    .seccion-topos .recurso-nota { color: var(--color-soporte-claro); }
+
+    .topos-cabecera
+    {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .topos-logo
+    {
+        width: clamp(80px, 12vw, 120px);
+        height: auto;
+        padding: 14px;
+        border-radius: 50%;
+        background: var(--topos-rojo);
+        flex-shrink: 0;
+    }
+
+    .topos-etiqueta
+    {
+        font-family: "Outfit", sans-serif;
+        font-size: 0.85rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--topos-texto);
+    }
+
+    .seccion-topos .topos-titulo { color: var(--color-soporte-claro); }
+
+    .tarjeta--topos
+    {
+        border-color: var(--topos-rojo);
+        background: #1C1C1C;
+        color: var(--color-soporte-claro);
+    }
+
+    .tarjeta--topos::before { background: var(--topos-coral); }
+    .tarjeta--topos .subtitulo { color: var(--topos-texto); }
+    .tarjeta--topos p { color: var(--color-soporte-claro); }
+
+    .topos-acciones
+    {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .topos-boton
+    {
+        display: inline-block;
+        padding: 10px 22px;
+        border: 2px solid var(--topos-rojo);
+        border-radius: 999px;
+        background: var(--topos-rojo);
+        color: #fff;
+        font-family: "Outfit", sans-serif;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .topos-boton--claro { background: transparent; color: var(--topos-texto); border-color: var(--topos-texto); }
+    .topos-boton:hover { background: var(--topos-coral); color: #fff; border-color: var(--topos-coral); }
+    .topos-boton:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+    @media (max-width: 768px)
+    {
+        .topos-cabecera { flex-direction: column; align-items: flex-start; }
+    }
+
+    /* 5.14 Página de técnicas de respiración */
+    :root:has(body.pagina-respiracion)
+    {
+        --color-acento: color-mix(in srgb, var(--color-terceario) 22%, white);
+        --color-tarjeta-sombra: var(--color-terceario); 
+        --color-scroll-pista: color-mix(in srgb, var(--color-terceario) 40%, white);
+        --respiracion-titulo: #1C7A6E;
+    }
+
+    :root:has(body.pagina-respiracion):not(.scroll-oscuro) { --scroll-pulgar: color-mix(in srgb, var(--color-terceario) 75%, black); }
+
+    body.pagina-respiracion .tarjeta { background: color-mix(in srgb, var(--color-terceario) 6%, white); }
+    body.pagina-respiracion .titulo { color: var(--respiracion-titulo); }
+    body.pagina-respiracion .tarjeta-numero { background: color-mix(in srgb, var(--color-terceario) 45%, white); } 
+    body.pagina-respiracion .aviso li::marker { color: var(--color-terceario); } 
+    body.pagina-respiracion #titulo-pagina { color: #F4FBF9; text-shadow: 0 2px 16px color-mix(in srgb, var(--respiracion-titulo) 85%, transparent), 0 0 4px color-mix(in srgb, var(--respiracion-titulo) 45%, transparent); } 
+
+    /* 5.15 Organización Mundial de la Salud */
+    .seccion-headspace
+    {
+        --hs-naranja: #F47D31; 
+        --hs-oscuro: #3D2A1E; 
+        --hs-fondo: #FFF5EC;
+        background: var(--hs-fondo);
+        box-shadow: 0 0 0 100vmax var(--hs-fondo); 
+        clip-path: inset(0 -100vmax);
+        border-top: 8px solid var(--hs-naranja);
+        border-bottom: 8px solid var(--hs-naranja); 
+        margin-top: 40px; 
+        color: var(--hs-oscuro);
+    }
+
+    .seccion-headspace .recurso-nota { color: var(--hs-oscuro); }
+
+    .headspace-cabecera
+    {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .headspace-logo
+    {
+        width: clamp(160px, 22vw, 240px);
+        height: auto;
+        padding: 12px 18px;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 6px 18px rgba(10, 61, 98, 0.12);
+        flex-shrink: 0;
+    }
+
+    .headspace-etiqueta
+    {
+        font-family: "Outfit", sans-serif;
+        font-size: 0.85rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--hs-naranja);
+    }
+
+    body.pagina-respiracion .headspace-titulo { color: var(--hs-oscuro); }
+
+    body .seccion-headspace .tarjeta--headspace { border-color: var(--hs-naranja); background: #fff; } 
+    .tarjeta--headspace::before { background: var(--hs-naranja); }
+    .tarjeta--headspace .subtitulo { color: var(--hs-oscuro); }
+
+    .headspace-acciones
+    {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .headspace-boton
+    {
+        display: inline-block;
+        padding: 10px 22px;
+        border: 2px solid var(--hs-naranja);
+        border-radius: 999px;
+        background: var(--hs-naranja);
+        color: #fff;
+        font-family: "Outfit", sans-serif;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .headspace-boton--claro { background: transparent; color: var(--hs-oscuro); border-color: var(--hs-oscuro); }
+    .headspace-boton:hover { background: var(--hs-oscuro); border-color: var(--hs-oscuro); color: #fff; }
+    .headspace-boton:focus-visible { outline: 3px solid var(--hs-oscuro); outline-offset: 3px; }
+
+    @media (max-width: 768px)
+    {
+        .headspace-cabecera { flex-direction: column; align-items: flex-start; }
+    }
+
+    /* 5.16 Página de recursos de prevención */
+    :root:has(body.pagina-prevencion)
+    {
+        --color-acento: #F3DFDA;    
+        --color-tarjeta-sombra: #D9423B; 
+        --color-scroll-pista: #E8C6C0;
+    }
+
+    :root:has(body.pagina-prevencion):not(.scroll-oscuro) { --scroll-pulgar: #B3140F; } 
+    body.pagina-prevencion .tarjeta:not(.tarjeta--topos),
+    body.pagina-prevencion .telefono { background: #FFF7F5; }
+    body.pagina-prevencion main > article:not(.seccion-topos) .titulo { color: #A3150F; } 
+    body.pagina-prevencion .tarjeta-numero { background: #F2A59C; }
+    body.pagina-prevencion .telefono-numero { color: #B3140F; }
+    body.pagina-prevencion #titulo-pagina { color: #FFF3EF; text-shadow: 0 2px 14px rgba(90, 12, 8, 0.55); }
+
+    /* 5.17 Mapa: filtros, mapa interactivo, ficha de cada lugar y líneas telefónicas (src/mapa/) */
     .mapa-filtros
     {
         display: flex;
@@ -1116,801 +1954,6 @@ main
         color: var(--color-soporte-oscuro);
     }
 
-    @media (max-width: 768px)
-    {
-        .mapa-contenedor
-        {
-            height: 420px;
-        }
-
-        .mapa-filtros
-        {
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            padding-bottom: 6px;
-        }
-
-        .mapa-filtro
-        {
-            flex: none;
-        }
-
-        /* La tarjeta pasa a ser una hoja desde abajo */
-        .mapa-ficha
-        {
-            top: auto;
-            bottom: 12px;
-            left: 12px;
-            width: calc(100% - 24px);
-            max-height: 70%;
-        }
-    }
-
-    .context, .carusel, main > article
-    {
-        padding-left: var(--padding-pagina);
-        padding-right: var(--padding-pagina);
-    }
-
-    .context
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 48px;
-        padding-top: 48px;
-        padding-bottom: 24px;
-    }
-
-    .context .articulo-texto
-    {
-        flex: 1 1 0;
-        min-width: 0;
-        text-align: left;
-    }
-
-    .context ul
-    {
-        margin-top: 4px;
-        padding-left: 1.4rem;
-    }
-
-    .context li
-    {
-        font-family: "Outfit", sans-serif;
-        font-size: var(--tamano-texto);
-        color: var(--color-texto);
-    }
-
-    .context li + li
-    {
-        margin-top: 8px;
-    }
-
-/* 5.6 Recursos */
-
-    main > article /* menos espacio entre artículos (antes 44px arriba y abajo: quedaba un hueco grande) */
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-        padding-top: 22px;
-        padding-bottom: 22px;
-    }
-
-    .decoracion-titulo + article
-    {
-        padding-top: 40px;
-    }
-
-    main > article:last-of-type
-    {
-        padding-bottom: 64px;
-    }
-
-    .recurso-cabecera
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .recurso-subseccion
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .recurso-subseccion + .recurso-subseccion
-    {
-        margin-top: 12px;
-    }
-
-    .recurso-texto
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-        max-width: 80ch;
-    }
-
-    .recurso-nota
-    {
-        max-width: 80ch;
-    }
-
-    .recurso-split
-    {
-        display: grid;
-        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
-        gap: 40px;
-        align-items: stretch;
-    }
-
-    .recurso-split-contenido
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 28px;
-        min-width: 0;
-    }
-
-    .recurso-split-contenido .recurso-texto
-    {
-        max-width: none;
-    }
-
-        /* 5.6.1 Imagenes */
-        .imagen-apoyo
-        {
-            position: relative;
-            min-height: 260px;
-            border-radius: 8px;
-            overflow: hidden;
-            background: var(--color-principal);
-        }
-
-        .imagen-apoyo img
-        {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-    /* 5.7 Tarjetas */
-    .tarjetas
-    {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 28px;
-        list-style: none;
-    }
-
-    .tarjetas--tres
-    {
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-
-    .tarjetas--cinco
-    {
-        grid-template-columns: repeat(5, 1fr);
-    }
-
-    .tarjeta
-    {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        padding: 18px 20px 20px;
-        border: 1.5px solid var(--color-soporte-oscuro);
-        border-radius: 12px;
-        background: var(--color-soporte-claro);
-    }
-
-    .tarjeta::before
-    {
-        content: "";
-        position: absolute;
-        inset: 7px -7px -7px 7px;
-        z-index: -1;
-        border-radius: 12px;
-        background: var(--color-tarjeta-sombra);
-    }
-
-    .tarjeta--verde::before,
-    .tarjeta--alerta::before
-    {
-        background: var(--color-tarjeta-sombra);
-    }
-
-    .tarjeta .subtitulo
-    {
-        font-size: 32px;
-        font-weight: 700;
-    }
-
-    .tarjeta ul
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding-left: 1.2rem;
-    }
-
-    .tarjeta li
-    {
-        font-family: "Outfit", sans-serif;
-        font-size: var(--tamano-texto);
-        color: var(--color-texto);
-    }
-
-    .tarjeta li::marker
-    {
-        color: var(--color-atencion);
-    }
-
-    .tarjeta-numero
-    {
-        display: grid;
-        place-items: center;
-        flex: none;
-        width: 34px;
-        height: 34px;
-        border: 1.5px solid var(--color-soporte-oscuro);
-        border-radius: 50%;
-        background: var(--color-principal);
-        color: var(--color-soporte-oscuro);
-        font-family: "Luckiest Guy", cursive;
-        font-size: 1.05rem;
-        line-height: 1;
-    }
-
-    /* 5.8 Teléfonos */
-    .telefonos
-    {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 20px;
-        align-content: start;
-        list-style: none;
-    }
-
-    .telefono
-    {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding: 12px 16px 14px;
-        border: 1.5px solid var(--color-soporte-oscuro);
-        border-radius: 10px;
-        background: var(--color-soporte-claro);
-    }
-
-    .telefono::before
-    {
-        content: "";
-        position: absolute;
-        inset: 5px -5px -5px 5px;
-        z-index: -1;
-        border-radius: 10px;
-        background: var(--color-tarjeta-sombra);
-    }
-
-    .telefono-numero
-    {
-        font-family: "Dongle", sans-serif;
-        font-weight: 700;
-        font-size: 44px;
-        line-height: 0.85;
-        color: var(--color-atencion);
-    }
-
-    .telefono p
-    {
-        font-size: 1rem;
-        line-height: 1.3;
-    }
-
-    .recurso-split--telefonos
-    {
-        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-    }
-
-    /* 5.9 Avisos */
-    .aviso
-    {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 20px 24px 22px;
-        border: 1.5px solid var(--color-soporte-oscuro);
-        border-radius: 12px;
-        background: var(--color-soporte-claro);
-    }
-
-    .aviso::before
-    {
-        content: "";
-        position: absolute;
-        inset: 7px -7px -7px 7px;
-        z-index: -1;
-        border-radius: 12px;
-        background: var(--color-tarjeta-sombra);
-    }
-
-    .aviso ul
-    {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        padding-left: 1.2rem;
-    }
-
-    .aviso li
-    {
-        font-family: "Outfit", sans-serif;
-        font-size: var(--tamano-texto);
-        color: var(--color-texto);
-    }
-
-    .aviso li::marker
-    {
-        color: var(--color-atencion);
-    }
-
-    /* 5.10 Linea de ayuda */
-    .linea-ayuda
-    {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-        padding: 20px 28px;
-        border-radius: 12px;
-        background: var(--color-soporte-oscuro);
-    }
-
-    .linea-ayuda p
-    {
-        color: var(--color-soporte-claro);
-    }
-
-    .linea-numero
-    {
-        flex: none;
-        font-family: "Luckiest Guy", cursive;
-        font-size: 3.5rem;
-        line-height: 1;
-        color: var(--color-principal);
-    }
-
-    /* 5.11 Advertencia */
-    html.modal-abierto
-    {
-        overflow: hidden;
-        scrollbar-gutter: stable;
-    }
-
-    .advertencia
-    {
-        margin: auto;
-        padding: 0;
-        width: 100%;
-        max-width: min(680px, 92vw);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 12px;
-        background: var(--color-soporte-oscuro);
-        color: var(--color-soporte-claro);
-        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
-    }
-
-    .advertencia::backdrop
-    {
-        background: rgba(10, 5, 14, 0.78);
-    }
-
-    .advertencia[open]::backdrop
-    {
-        animation: advertencia-fondo 0.25s ease-out;
-    }
-
-    @keyframes advertencia-fondo
-    {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    .advertencia.sacudir
-    {
-        animation: advertencia-sacudida 0.45s ease-in-out;
-    }
-
-    @keyframes advertencia-sacudida
-    {
-        0%   { transform: translateX(0); border-color: var(--color-advertencia); }
-        15%  { transform: translateX(-12px); }
-        30%  { transform: translateX(10px); }
-        45%  { transform: translateX(-8px); }
-        60%  { transform: translateX(6px); }
-        75%  { transform: translateX(-3px); }
-        100% { transform: translateX(0); border-color: rgba(255, 255, 255, 0.12); }
-    }
-
-    @keyframes advertencia-destello
-    {
-        0%, 100% 
-            { 
-                border-color: rgba(255, 255, 255, 0.12); 
-                box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); 
-            }
-        30%, 70% 
-            { 
-                border-color: var(--color-advertencia); 
-                box-shadow: 0 0 0 4px rgba(208, 31, 42, 0.45), 0 24px 64px rgba(0, 0, 0, 0.55); 
-            }
-    }
-
-    .advertencia-caja
-    {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
-        padding: 40px 40px 28px;
-    }
-
-    .advertencia-icono
-    {
-        width: 88px;
-        height: auto;
-        color: var(--color-advertencia-icono);
-    }
-
-    .advertencia-icono .exclamacion
-    {
-        fill: var(--color-soporte-oscuro);
-    }
-
-    .advertencia-titulo
-    {
-        font-size: 4.5rem;
-        line-height: 0.9;
-        text-align: center;
-        color: var(--color-advertencia);
-    }
-
-    .advertencia-texto
-    {
-        width: 100%;
-        font-size: 0.95rem;
-        line-height: 1.55;
-        color: var(--color-soporte-claro);
-    }
-
-    .advertencia-subtitulo
-    {
-        width: 100%;
-        margin-top: 4px;
-        font-size: 2rem;
-        line-height: 0.9;
-        color: var(--color-soporte-claro);
-    }
-
-    .advertencia-lista
-    {
-        column-count: 2;
-        column-width: 15rem;
-        column-gap: 32px;
-        width: 100%;
-        list-style: none;
-    }
-
-    .advertencia-lista li
-    {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        margin-bottom: 8px;
-        break-inside: avoid;
-        font-family: "Outfit", sans-serif;
-        font-size: 0.95rem;
-        line-height: 1.35;
-        color: var(--color-soporte-claro);
-    }
-
-    .advertencia-lista li::before
-    {
-        content: "";
-        flex: none;
-        width: 8px;
-        height: 8px;
-        margin-top: 0.4em;
-        border-radius: 2px;
-        background: var(--color-advertencia);
-    }
-
-    .advertencia-aviso
-    {
-        display: none;
-        width: 100%;
-        padding: 12px 16px;
-        border-left: 4px solid var(--color-acento);
-        border-radius: 6px;
-        background: rgba(242, 192, 99, 0.12);
-    }
-
-    .advertencia-aviso-titulo
-    {
-        font-size: 1.9rem;
-        line-height: 0.9;
-        color: var(--color-acento);
-    }
-
-    .advertencia-aviso p
-    {
-        margin-top: 4px;
-        font-size: 0.9rem;
-        line-height: 1.5;
-        color: var(--color-soporte-claro);
-    }
-
-    .advertencia-acciones
-    {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        margin-top: 16px;
-    }
-
-    .advertencia-accion
-    {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        padding: 6px 10px;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-family: "Dongle", sans-serif;
-        font-weight: 700;
-        font-size: 2.75rem;
-        line-height: 1;
-        text-decoration: none;
-        transition: color 0.2s;
-    }
-
-    .advertencia-accion--volver { color: var(--color-soporte-claro); }
-    .advertencia-accion--seguir { color: var(--color-soporte-claro); }
-
-    .advertencia-accion:hover
-    {
-        color: var(--color-acento);
-    }
-
-    .advertencia-accion:focus-visible
-    {
-        outline: 3px solid var(--color-acento);
-        outline-offset: 2px;
-        border-radius: 6px;
-    }
-
-    .advertencia-accion svg
-    {
-        width: 32px;
-        height: 32px;
-        color: var(--color-advertencia-flecha);
-        transition: transform 0.2s;
-    }
-
-    .advertencia-accion--volver:hover svg { transform: translateX(-4px); }
-    .advertencia-accion--seguir:hover svg { transform: translateX(4px); }
-
-    /* 5.12 Brigada Topos */
-    .seccion-topos
-    {
-        --topos-rojo: #D10A0A;       /* rojo intenso de la franja y los botones de topos.mx */
-        --topos-coral: #D9423B;      /* rojo coral del pie de página de topos.mx */
-        --topos-carbon: #121212;     /* negro de la sección de operativos */
-        --topos-texto: #FF6A5F;      /* rojo claro para textos sobre negro (el rojo puro casi no se lee) */
-        position: relative;
-        margin-top: 40px; /* mismo aire que la sección de la OMS antes del patrocinador */
-        color: var(--color-soporte-claro);
-        background: var(--topos-carbon);
-        box-shadow: 0 0 0 100vmax var(--topos-carbon); /* fondo de borde a borde aunque el artículo tenga margen lateral */
-        clip-path: inset(0 -100vmax);
-        border-top: 8px solid var(--topos-rojo);
-        border-bottom: 8px solid var(--topos-coral);
-    }
-
-    .seccion-topos .recurso-nota { color: var(--color-soporte-claro); }
-
-    .topos-cabecera
-    {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-    }
-
-    .topos-logo
-    {
-        width: clamp(80px, 12vw, 120px);
-        height: auto;
-        padding: 14px;
-        border-radius: 50%;
-        background: var(--topos-rojo);
-        flex-shrink: 0;
-    }
-
-    .topos-etiqueta
-    {
-        font-family: "Outfit", sans-serif;
-        font-size: 0.85rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--topos-texto);
-    }
-
-    .seccion-topos .topos-titulo { color: var(--color-soporte-claro); }
-
-    .tarjeta--topos
-    {
-        border-color: var(--topos-rojo);
-        background: #1C1C1C;
-        color: var(--color-soporte-claro);
-    }
-
-    .tarjeta--topos::before { background: var(--topos-coral); }
-    .tarjeta--topos .subtitulo { color: var(--topos-texto); }
-    .tarjeta--topos p { color: var(--color-soporte-claro); }
-
-    .topos-acciones
-    {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-    }
-
-    .topos-boton
-    {
-        display: inline-block;
-        padding: 10px 22px;
-        border: 2px solid var(--topos-rojo);
-        border-radius: 999px;
-        background: var(--topos-rojo);
-        color: #fff;
-        font-family: "Outfit", sans-serif;
-        font-weight: 600;
-        text-decoration: none;
-        transition: background 0.25s ease, color 0.25s ease;
-    }
-
-    .topos-boton--claro { background: transparent; color: var(--topos-texto); border-color: var(--topos-texto); }
-    .topos-boton:hover { background: var(--topos-coral); color: #fff; border-color: var(--topos-coral); }
-    .topos-boton:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-
-    @media (max-width: 768px)
-    {
-        .topos-cabecera { flex-direction: column; align-items: flex-start; }
-    }
-
-    /* 5.13 Página de técnicas de respiración */
-    :root:has(body.pagina-respiracion)
-    {
-        --color-acento: color-mix(in srgb, var(--color-terceario) 22%, white);
-        --color-tarjeta-sombra: var(--color-terceario); 
-        --color-scroll-pista: color-mix(in srgb, var(--color-terceario) 40%, white);
-        --respiracion-titulo: #1C7A6E;
-    }
-
-    :root:has(body.pagina-respiracion):not(.scroll-oscuro) { --scroll-pulgar: color-mix(in srgb, var(--color-terceario) 75%, black); }
-
-    body.pagina-respiracion .tarjeta { background: color-mix(in srgb, var(--color-terceario) 6%, white); }
-    body.pagina-respiracion .titulo { color: var(--respiracion-titulo); }
-    body.pagina-respiracion .tarjeta-numero { background: color-mix(in srgb, var(--color-terceario) 45%, white); } 
-    body.pagina-respiracion .aviso li::marker { color: var(--color-terceario); } 
-    body.pagina-respiracion #titulo-pagina { color: #F4FBF9; text-shadow: 0 2px 16px color-mix(in srgb, var(--respiracion-titulo) 85%, transparent), 0 0 4px color-mix(in srgb, var(--respiracion-titulo) 45%, transparent); } 
-
-    /* 5.14 Organización Mundial de la Salud */
-    .seccion-oms
-    {
-        --oms-azul: #009ADE; 
-        --oms-azul-oscuro: #0A3D62; 
-        --oms-fondo: #F3FAFE;
-        background: var(--oms-fondo);
-        box-shadow: 0 0 0 100vmax var(--oms-fondo); 
-        clip-path: inset(0 -100vmax);
-        border-top: 8px solid var(--oms-azul);
-        border-bottom: 8px solid var(--oms-azul); 
-        margin-top: 40px; 
-        color: var(--oms-azul-oscuro);
-    }
-
-    .seccion-oms .recurso-nota { color: var(--oms-azul-oscuro); }
-
-    .oms-cabecera
-    {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-    }
-
-    .oms-logo
-    {
-        width: clamp(160px, 22vw, 240px);
-        height: auto;
-        padding: 12px 18px;
-        border-radius: 12px;
-        background: #fff;
-        box-shadow: 0 6px 18px rgba(10, 61, 98, 0.12);
-        flex-shrink: 0;
-    }
-
-    .oms-etiqueta
-    {
-        font-family: "Outfit", sans-serif;
-        font-size: 0.85rem;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: var(--oms-azul);
-    }
-
-    body.pagina-respiracion .oms-titulo { color: var(--oms-azul-oscuro); }
-
-    body .seccion-oms .tarjeta--oms { border-color: var(--oms-azul); background: #fff; } 
-    .tarjeta--oms::before { background: var(--oms-azul); }
-    .tarjeta--oms .subtitulo { color: var(--oms-azul-oscuro); }
-
-    .oms-acciones
-    {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-    }
-
-    .oms-boton
-    {
-        display: inline-block;
-        padding: 10px 22px;
-        border: 2px solid var(--oms-azul);
-        border-radius: 999px;
-        background: var(--oms-azul);
-        color: #fff;
-        font-family: "Outfit", sans-serif;
-        font-weight: 600;
-        text-decoration: none;
-        transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
-    }
-
-    .oms-boton--claro { background: transparent; color: var(--oms-azul-oscuro); border-color: var(--oms-azul-oscuro); }
-    .oms-boton:hover { background: var(--oms-azul-oscuro); border-color: var(--oms-azul-oscuro); color: #fff; }
-    .oms-boton:focus-visible { outline: 3px solid var(--oms-azul-oscuro); outline-offset: 3px; }
-
-    @media (max-width: 768px)
-    {
-        .oms-cabecera { flex-direction: column; align-items: flex-start; }
-    }
-
-    /* 5.15 Página de recursos de prevención */
-    :root:has(body.pagina-prevencion)
-    {
-        --color-acento: #F3DFDA;    
-        --color-tarjeta-sombra: #D9423B; 
-        --color-scroll-pista: #E8C6C0;
-    }
-
-    :root:has(body.pagina-prevencion):not(.scroll-oscuro) { --scroll-pulgar: #B3140F; } 
-    body.pagina-prevencion .tarjeta:not(.tarjeta--topos),
-    body.pagina-prevencion .telefono { background: #FFF7F5; }
-    body.pagina-prevencion main > article:not(.seccion-topos) .titulo { color: #A3150F; } 
-    body.pagina-prevencion .tarjeta-numero { background: #F2A59C; }
-    body.pagina-prevencion .telefono-numero { color: #B3140F; }
-    body.pagina-prevencion #titulo-pagina { color: #FFF3EF; text-shadow: 0 2px 14px rgba(90, 12, 8, 0.55); } 
-
 /* 6. Footer ----------------- */
 .footer {
     display: flex;
@@ -1942,11 +1985,21 @@ main
 
 .patrocinadores-lista
 {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 150px)); /* columnas iguales: el logo del medio queda justo en el centro (antes el ancho de cada logo lo corría) */
     justify-content: center;
-    gap: 22px 36px;
+    justify-items: center;
+    align-items: center;
+    gap: 22px;
+    padding: 0;
     list-style: none;
+}
+
+.patrocinadores-lista li
+{
+    display: flex;
+    justify-content: center;
+    max-width: 100%;
 }
 
 .patrocinadores-lista a
@@ -1968,6 +2021,8 @@ main
 {
     height: 64px;
     width: auto;
+    max-width: 100%;
+    object-fit: contain;
     display: block;
 }
 
@@ -2032,8 +2087,7 @@ main
 
         .escena-contenido .titulo-principal
         {
-            font-size: clamp(1.9rem, 9vw, 2.4rem);
-            line-height: 1.05;
+            font-size: clamp(3rem, 17vw, 4.4rem);
         }
     }
 
@@ -2080,7 +2134,7 @@ main
         }
     }
 
-    /* 5.4 Articulos */
+    /* 5.5 Articulos */
     @media (max-width: 768px)
     {
         .recursos-grid
@@ -2109,7 +2163,7 @@ main
         }
     }
 
-    /* 5.5 Recursos */
+    /* 5.7 Recursos */
     @media (max-width: 768px)
     {
         .recurso-split,
@@ -2129,7 +2183,7 @@ main
         }
     }
 
-        /* 5.5.1 Imagenes */
+        /* 5.7.1 Imagenes */
         @media (max-width: 768px)
         {
             .imagen-apoyo
@@ -2146,7 +2200,14 @@ main
             }
         }
 
-    /* 5.7 Teléfonos */
+    /* 5.8 Tarjetas */
+    /* Filas de 4 en computador y tablet (técnicas de respiración); en celular, una columna como las demás */
+    @media (min-width: 769px)
+    {
+        .tarjetas--cuatro { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    /* 5.9 Teléfonos */
     @media (max-width: 768px)
     {
         .telefonos
@@ -2155,7 +2216,7 @@ main
         }
     }
 
-    /* 5.9 Linea de ayuda */
+    /* 5.11 Linea de ayuda */
     @media (max-width: 768px)
     {
         .linea-ayuda
@@ -2166,7 +2227,7 @@ main
         }
     }
 
-    /* 5.10 Advertencia */
+    /* 5.12 Advertencia */
     @media (max-width: 768px)
     {
         .advertencia-caja
@@ -2216,13 +2277,48 @@ main
         .advertencia-accion svg { transition: none; }
     }
 
+    /* 5.17 Mapa */
+    @media (min-width: 769px) /* líneas de ayuda: filas de 4 en computador y tablet */
+    {
+        .mapa-lineas { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 768px)
+    {
+        .mapa-contenedor
+        {
+            height: 420px;
+        }
+
+        .mapa-filtros
+        {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            padding-bottom: 6px;
+        }
+
+        .mapa-filtro
+        {
+            flex: none;
+        }
+
+        /* La tarjeta pasa a ser una hoja desde abajo */
+        .mapa-ficha
+        {
+            top: auto;
+            bottom: 12px;
+            left: 12px;
+            width: calc(100% - 24px);
+            max-height: 70%;
+        }
+    }
+
     /* 6. Footer */
     @media (max-width: 768px)
     {
         .patrocinadores-lista
         {
-            flex-direction: column;
-            align-items: center;
+            grid-template-columns: minmax(0, 150px); /* uno debajo del otro, centrados */
             gap: 28px;
         }
     }

@@ -1,12 +1,17 @@
 import * as THREE from 'three'
 import { CONFIG, runtime } from './config.js'
+import { SPACE_ZOOM } from './environment.js'
+// cuarto y sala: zoom propio (environment.js). En pantallas angostas (celular de pie) la cámara se aleja para que quepa el ancho y sobraba
+// mucho fondo arriba y abajo: adentro de la casa se acerca un poco más (el cuarto es angosto, la sala ancha)
+const ANGOSTO = { HOUSE: 1.28, HOME: 1.12 }
+const zoomNow = () => CONFIG.camera.zoom * (SPACE_ZOOM[runtime.space] || 1) * (innerWidth / innerHeight < 1 ? ANGOSTO[runtime.space] || 1 : 1)
 export const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200)
 camera.layers.enable(1) // capa 1: la protagonista (scene.js la puede dibujar aparte, nítida)
 const target = new THREE.Vector3()
 export function resizeCamera() {
     const a = innerWidth / innerHeight, v = CONFIG.camera.view * Math.max(1, 1.4 / a) // pantallas angostas (móvil / ventana estrecha): se aleja para que quepa el mismo ancho que en escritorio
     camera.left = -v * a / 2; camera.right = v * a / 2; camera.top = v / 2; camera.bottom = -v / 2
-    camera.zoom = CONFIG.camera.zoom; camera.updateProjectionMatrix()
+    camera.zoom = zoomNow(); camera.updateProjectionMatrix()
 }
 // desiredX / desiredZ: dentro de la casa y del MIO es fijo; en la calle sigue al personaje (también cuando la calle gira)
 export function updateCamera(t, dt, desiredX, desiredZ = 0) {
@@ -16,6 +21,6 @@ export function updateCamera(t, dt, desiredX, desiredZ = 0) {
     target.set(c.x + (Math.sin(t * 41) + Math.sin(t * 23)) * s, c.y + Math.sin(t * 37) * s, c.z + Math.cos(t * 29) * s)
     camera.position.set(target.x + c.distance * Math.cos(el) * Math.sin(az), target.y + c.distance * Math.sin(el), target.z + c.distance * Math.cos(el) * Math.cos(az))
     camera.lookAt(target)
-    if (camera.zoom !== c.zoom) { camera.zoom = c.zoom; camera.updateProjectionMatrix() }
+    const z = zoomNow(); if (camera.zoom !== z) { camera.zoom = z; camera.updateProjectionMatrix() }
 }
 addEventListener('resize', resizeCamera); resizeCamera()

@@ -32,4 +32,5 @@ const earth = {
 }
 
 // 2. Exportación
-export const GAMES = { earth }
+import { cats } from './cats.js' // categorías mentales rápidas (pop-up tipo captcha)
+export const GAMES = { earth, cats }

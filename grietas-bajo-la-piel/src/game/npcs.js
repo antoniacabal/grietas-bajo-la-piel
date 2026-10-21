@@ -8,7 +8,7 @@
 
 // 0. Imports
 import * as THREE from 'three'
-import { spaces, walkableIn, SEATS, STREET_X0, SEGS, ROUTE_LEN, routePoint } from './environment.js'
+import { spaces, walkableIn, SEATS, SEAT_Y, MOM_SPOT, DRIVER_SEAT, STREET_X0, SEGS, ROUTE_LEN, routePoint } from './environment.js'
 import { CONFIG, runtime } from './config.js'
 import { player } from './player.js'
 
@@ -49,10 +49,11 @@ for (let i = 0; i < CONFIG.npcs.street; i++) {
 ;[[-2.4, -3.6], [-1.2, -3.75]].forEach(([dx, z]) => { const g = make(); g.position.set(BUS_X + dx, 0, z); add({ g, parent: spaces.STREET, sp: 'STREET', kind: 'idle', ph: r(0, 6), y: 0 }) }) // esperando el MIO bajo el techo del paradero (fuera de la calle, para no bloquear el paso)
 const BX = CONFIG.world.busInteriorX
 SEATS.sort(() => Math.random() - 0.5).slice(0, CONFIG.npcs.bus).forEach(s => {
-    s.taken = true; const g = make(); g.scale.setScalar(0.85); g.position.set(s.x, 0.45, s.z); g.rotation.y = s.face
-    add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'seated', ph: r(0, 6), y: 0.45 })
+    // un poco hacia el frente del cojín (como Gabriela al sentarse): en el centro, el cuerpo atravesaba el espaldar de las bancas largas
+    s.taken = true; const g = make(); g.scale.setScalar(0.85); g.position.set(s.x + Math.sin(s.face) * 0.2, SEAT_Y, s.z + Math.cos(s.face) * 0.2); g.rotation.y = s.face
+    add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'seated', ph: r(0, 6), y: SEAT_Y })
 })
-{ const g = make(); g.position.set(BX + 5.1, 0, 0); g.rotation.y = Math.PI / 2; add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'driver', ph: 0, y: 0 }) } // conductor
+{ const g = make(); g.scale.setScalar(0.85); g.position.set(DRIVER_SEAT.x, SEAT_Y, DRIVER_SEAT.z); g.rotation.y = Math.PI / 2; add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'driver', ph: 0, y: SEAT_Y }) } // conductor, sentado en su puesto del modelo
 
 // 3. Mamá: en la cocina, te mira cuando estás cerca y se mueve un poco al hablar (su colisión está en environment.js)
 // Es una silueta negra como los demás NPCs (la ansiedad no deja ver a los otros como personas), pero conserva
@@ -72,7 +73,7 @@ export const mom = (() => {
         const l = mesh(lashG, white, x + s * 0.1, 0.11, 0.3, hg)                               // pestaña: una punta blanca en la esquina de afuera
         l.rotation.set(-0.3, 0, -s * 1.05); l.scale.z = 0.4
     })
-    hg.position.y = 1.5; g.add(body, hg); g.position.set(HX - 2, 0, -2.2); spaces.HOME.add(g)
+    hg.position.y = 1.5; g.add(body, hg); g.position.set(MOM_SPOT.x, 0, MOM_SPOT.z); spaces.HOME.add(g)
     let talking = false
     return {
         g,
@@ -129,11 +130,25 @@ function updatePhantoms(dt, t, sp) {
 // 4. Movimiento y choques: se llama en cada cuadro
 const free = (n, x, z) => walkableIn(n.sp, x, z, true) // los peatones no se salen de la calle (ni al caminito de la casa ni al pasto)
 const shove = (n, dx, dz) => { const p = n.g.position; if (!free(n, p.x + dx, p.z + dz)) return false; p.x += dx; p.z += dz; return true }
+function cambiarCarril(n, otro) { // pasa al carril libre más cercano que quede lejos del otro (y del personaje)
+    const p = n.g.position, ro = n.route; if (!ro) return
+    const alongX = ro.axis === 'x', c = alongX ? p.z : p.x, op = otro.g.position
+    const lejos = (x, z) => Math.hypot(op.x - x, op.z - z) > R * 1.1 && Math.hypot(player.x - x, player.z - z) > R * 1.1
+    const lane = ro.lanes.slice().sort((a, b) => Math.abs(a - c) - Math.abs(b - c)).find(l => { const [x, z] = alongX ? [p.x, l] : [l, p.z]; return free(n, x, z) && lejos(x, z) })
+    if (lane !== undefined) alongX ? p.z = lane : p.x = lane
+}
 export function updateNpcs(dt, t) {
     mom.update(dt, t)
     const sp = runtime.space, q = runtime.quake; let near = 0
+    // finales: nadie se mueve. Si perdiste, todos se voltean a mirar a Gabriela (antes de que la cámara se acerque)
+    const fin = ['FAILURE', 'ARRIVAL', 'ENDING_GOOD', 'ENDING_BAD'].includes(runtime.state), mirar = runtime.state === 'FAILURE' || runtime.state === 'ENDING_BAD'
     for (const n of npcs) {
         const p = n.g.position; n.cool = Math.max(0, n.cool - dt); n.stareCool = Math.max(0, (n.stareCool || 0) - dt)
+        if (fin) {
+            if (mirar && n.sp === sp) { const want = Math.atan2(player.x - p.x, player.z - p.z), r = n.g.rotation; r.y += Math.atan2(Math.sin(want - r.y), Math.cos(want - r.y)) * Math.min(1, dt * 6); n.g.userData.head.rotation.y *= 0.8 }
+            if (n.kind === 'walker') p.y = 0
+            continue
+        }
         if (q > 0.001 || n.shaking) { // terremoto: mueven la cabeza de un lado a otro y se sacuden
             const hd = n.g.userData.head, ph = n.ph || 0
             hd.rotation.x = Math.sin(t * 11 + ph) * 0.25 * q; hd.rotation.y = Math.sin(t * 14 + ph) * 0.8 * q; hd.rotation.z = Math.sin(t * 19 + ph * 1.3) * 0.35 * q
@@ -161,6 +176,7 @@ export function updateNpcs(dt, t) {
             if (n.vx || n.vz) { shove(n, n.vx * dt, n.vz * dt); n.vx *= Math.max(0, 1 - dt * 4); n.vz *= Math.max(0, 1 - dt * 4); if (Math.hypot(n.vx, n.vz) < 0.05) n.vx = n.vz = 0 }
         } else p.y = n.y + (n.kind === 'seated' ? Math.sin(t * 1.5 + n.ph) * 0.015 : 0)
     }
+    if (fin) { npcState.near = 0; return }
     for (let i = 0; i < npcs.length; i++) for (let j = i + 1; j < npcs.length; j++) { // entre NPCs: no se atraviesan
         const a = npcs[i], b = npcs[j]; if (a.sp !== b.sp) continue
         let dx = b.g.position.x - a.g.position.x, dz = b.g.position.z - a.g.position.z, d = Math.hypot(dx, dz)
@@ -171,8 +187,10 @@ export function updateNpcs(dt, t) {
             const ax = (a.route || b.route)?.axis || 'x', across = ax === 'x' ? Math.abs(dz) : Math.abs(dx)
             const side = across < 0.3 ? (i % 2 ? 1 : -1) * o * 0.6 : 0, [sx, sz] = ax === 'x' ? [0, side] : [side, 0]
             const okA = a.kind === 'walker' && shove(a, -ux * o - sx, -uz * o - sz), okB = b.kind === 'walker' && shove(b, ux * o + sx, uz * o + sz)
-            if (!okA && b.kind === 'walker') shove(b, ux * o * 2 + sx, uz * o * 2 + sz) // si uno quedó contra el borde, el otro se aparta el doble
-            if (!okB && a.kind === 'walker') shove(a, -ux * o * 2 - sx, -uz * o * 2 - sz)
+            const okB2 = !okA && b.kind === 'walker' && shove(b, ux * o * 2 + sx, uz * o * 2 + sz) // si uno quedó contra el borde, el otro se aparta el doble
+            const okA2 = !okB && a.kind === 'walker' && shove(a, -ux * o * 2 - sx, -uz * o * 2 - sz)
+            // ninguno pudo moverse (los dos contra el borde, o uno sentado / quieto): uno se pasa a otro carril libre. Si no, quedaban fusionados
+            if (!okA && !okB && !okB2 && !okA2) { const w = b.kind === 'walker' ? b : a.kind === 'walker' ? a : null; if (w) cambiarCarril(w, w === a ? b : a) }
         }
     }
     for (const n of npcs) { // con el personaje
@@ -189,7 +207,7 @@ export function updateNpcs(dt, t) {
             const ux = dx / d, uz = dz / d, o = R - d
             if (n.cool <= 0) { // chocar = parar y mirar (una sola vez cada tanto: si no, al seguir tocándolo se quedaba quieto para siempre y te encerraba)
                 n.cool = 2; npcState.bumps++
-                if (n.kind === 'walker' && n.state !== 'stare' && !(n.stareCool > 0)) { n.state = 'stare'; n.t = 2.5; n.stareCool = 9 }
+                if (runtime.postQuake && n.kind === 'walker' && n.state !== 'stare' && !(n.stareCool > 0)) { n.state = 'stare'; n.t = 2.5; n.stareCool = 9 } // antes del sismo nadie se detiene a mirarte
             }
             if (n.kind === 'walker') shove(n, ux * o * 0.6, uz * o * 0.6)
             const k = n.kind === 'walker' ? 0.4 : 1, px = player.x - ux * o * k, pz = player.z - uz * o * k

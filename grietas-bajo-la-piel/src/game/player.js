@@ -1,39 +1,73 @@
 // Indice
     // 0. Imports
     // 1. Modelo del personaje
-    // 2. Poses
+    // 2. Poses (caminar, sentada, acostada, miedo)
     // 3. Controles
     // 4. API pública (player)
 
 // 0. Imports
 import * as THREE from 'three'
+import { crearPersonaje, saltoSusto, SALTO } from './personaje.js'
 import { scene } from './scene.js'
 import { CONFIG, runtime } from './config.js'
-import { walkable, pullBack, endless } from './environment.js'
+import { walkable, pullBack, endless, BED_LIE, SEAT_Y, bagModel } from './environment.js'
 
-// 1. Modelo del personaje: TEMP_CHARACTER: sustituir por el sprite sheet definitivo
+// 1. Modelo del personaje: assets/protagonista/Personaje.fbx (y Personaje_Oscuro.fbx para el nivel 3 de ansiedad), con el
+//    esqueleto y las poses de personaje.js
 const group = new THREE.Group()
-const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8296b7 }) // la ropa no cambia de color al vestirse
-const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 1.2, 12), bodyMat)
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 12), new THREE.MeshStandardMaterial({ color: 0xe3d0b5 }))
-body.position.y = 0.6; head.position.y = 1.5
-// Maleta a la espalda: aparece cuando la recoges en el cuarto (el frente del personaje es su +z, la espalda su -z)
-const backpack = new THREE.Group(), bagMat = new THREE.MeshStandardMaterial({ color: 0x799180 })
+const ALTO = 1.8 // alto del personaje en el juego
+// Mientras carga el modelo se ve una figura simple (lo mismo que había antes)
+const temp = new THREE.Group()
 {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.24), bagMat); b.position.set(0, 0.82, -0.44)
-    const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.08), bagMat); pocket.position.set(0, 0.66, -0.58)
-    const strapMat = new THREE.MeshStandardMaterial({ color: 0x4f5f54 }) // correas sobre los hombros
-    ;[-0.16, 0.16].forEach(x => { const s = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.62), strapMat); s.position.set(x, 1.12, -0.06); backpack.add(s) })
-    backpack.add(b, pocket); backpack.visible = false
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 1.2, 12), new THREE.MeshStandardMaterial({ color: 0x8296b7 })); body.position.y = 0.6
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 12), new THREE.MeshStandardMaterial({ color: 0xe3d0b5 })); head.position.y = 1.5
+    temp.add(body, head)
 }
-group.add(body, head, backpack); scene.add(group)
+// Maleta a la espalda: aparece cuando la recoges en el cuarto (el frente del personaje es su +z, la espalda su -z).
+// Es la misma maleta del modelo del cuarto (Cuarto.fbx), centrada y un poco más pequeña; las correas pasan por los hombros
+const backpack = new THREE.Group(); backpack.visible = false
+const correas = [] // las correas (se esconden cuando la maleta va sobre las piernas)
+{
+    // Correas: tubos que salen de arriba de la maleta, pasan por encima del hombro, bajan por el pecho y vuelven por debajo del brazo
+    // hasta la base de la maleta (antes eran dos palitos rectos)
+    const strapMat = new THREE.MeshStandardMaterial({ color: 0x4f5f54, roughness: 0.9 })
+    ;[-1, 1].forEach(l => {
+        const x = 0.115 * l
+        const curva = new THREE.CatmullRomCurve3([
+            [x * 0.9, 0.98, -0.26], [x * 0.95, 1.05, -0.12], [x, 1.07, 0.0], [x * 1.05, 1.0, 0.115], [x * 1.15, 0.88, 0.125], [x * 1.45, 0.78, 0.09], [x * 1.65, 0.73, -0.02], [x * 1.55, 0.7, -0.16], [x * 1.25, 0.68, -0.26]
+        ].map(([px, py, pz]) => new THREE.Vector3(px, py, pz)))
+        const tubo = new THREE.Mesh(new THREE.TubeGeometry(curva, 40, 0.017, 6, false), strapMat) // más delgadas y a ras del cuerpo
+        backpack.add(tubo); correas.push(tubo)
+    })
+    bagModel.then(({ geometry, material }) => {
+        const g = geometry.clone(); g.computeBoundingBox(); const c = g.boundingBox.getCenter(new THREE.Vector3()); g.translate(-c.x, -c.y, -c.z)
+        const grado = THREE.MathUtils.degToRad; g.rotateY(grado(13)); g.rotateX(grado(3)); g.rotateZ(grado(-2)) // en el cuarto la maleta está un poco girada sobre la cama: derecha, no se ve ladeada en la espalda
+        const m = new THREE.Mesh(g, material); m.scale.set(1.05, 0.72, 0.85); m.position.set(0, 0.8, -0.38); m.rotation.y = Math.PI; m.layers.set(1); backpack.add(m) // más ancha que alta (antes se veía muy flaquita) · el bolsillo mira hacia afuera
+    })
+}
+group.add(temp, backpack); scene.add(group)
 group.traverse(o => o.layers.set(1)) // capa propia: en el nivel 3 de ansiedad se dibuja nítida sobre el mundo borroso
 group.position.set(CONFIG.player.startX, 0, CONFIG.player.startZ)
 
-// 2. Poses: acostado sobre la cama (la cama está contra la pared del fondo; la cabeza va hacia la almohada)
-const LIE = { x: -1.5, y: 1.0, z: -1.2 }
+// El modelo se carga cuando main.js lo pide (player.cargarModelo): armarlo toma un momento y, si pasaba al abrir la página, trababa la
+// tarjeta de "10 de agosto". La versión oscura se carga solo cuando hace falta (nivel 3 de ansiedad)
+const prota = crearPersonaje(ALTO, { normal: 'assets/protagonista/Personaje.fbx', oscuro: 'assets/protagonista/Personaje_Oscuro.fbx' }, (clave, cont) => {
+    cont.traverse(o => o.layers.set(1)); if (clave === 'normal') temp.visible = false
+})
+group.add(prota.grupo)
 
-// 3. Controles: WASD, flechas o el joystick táctil (touch.js lo escribe en runtime.joyX / joyY)
+// 2. Poses: ver personaje.js (de pie, caminar, sentada, acostada, miedo)
+let susto = 0, andar = 0, correr = 0, fase = 0 // cuánto susto, cuánto camina y cuánto corre (0 → 1, suavizados) · fase del paso
+let gesto = null // coger algo: { t, dur, alMedio, alFinal } (player.coger)
+let comiendo = false // desayunando (player.comer)
+let salto = null // sobresalto: { t, x0, z0, dx, dz } (player.sobresalto)
+let trasSalto = 0 // después de caer se queda quieta un momento (mirando) antes de la pose de miedo
+const PISO = { HOUSE: 0.03, HOME: 0.02, BUS: 0.005, STREET: 0 } // altura del piso de cada espacio (medida en los modelos): antes se hundía en el cuarto y la sala
+
+// Acostada sobre la cama (la cama está contra la pared del fondo; la cabeza va hacia la almohada)
+const LIE = BED_LIE
+
+// 3. Controles: WASD o el joystick táctil (touch.js lo escribe en runtime.joyX / joyY)
 const keys = new Set()
 addEventListener('keydown', (e) => keys.add(e.code)); addEventListener('keyup', (e) => keys.delete(e.code)); addEventListener('blur', () => keys.clear())
 const down = (...c) => c.some(k => keys.has(k))
@@ -45,18 +79,41 @@ export const player = {
     group,
     setMode(m) { mode = m },
     setBackpack(v) { backpack.visible = v }, // maleta a la espalda
-    lieDown() { lying = true; sitting = false; group.rotation.set(-Math.PI / 2, 0, 0); group.position.set(LIE.x, LIE.y, LIE.z) },
-    sit(s, lock = false) { sitting = true; seatLocked = lock; group.rotation.set(0, s.face, 0); group.position.set(s.x, 0.45, s.z) },
-    unsit() { if (!sitting) return; sitting = false; seatLocked = false; group.position.set(group.position.x, 0, 0) },
+    cargarModelo() { return prota.cargar('normal') }, // devuelve una promesa (main.js espera el modelo antes de la tarjeta "10 de agosto")
+    // gesto de coger algo en (x, z): se voltea hacia el objeto, estira la mano y lo recoge. alMedio: cuando la mano llega · alFinal: al terminar
+    coger(x, z, alMedio, alFinal) {
+        const r = group.rotation, want = Math.atan2(x - group.position.x, z - group.position.z)
+        r.y += Math.atan2(Math.sin(want - r.y), Math.cos(want - r.y))
+        gesto = { t: 0, dur: 1.1, medio: false, alMedio, alFinal }
+    },
+    get cogiendo() { return !!gesto },
+    // sobresalto: algo se movió en (x, z) (un edificio en la calle). Como un gato asustado, da un salto hacia atrás para alejarse, sin dejar de
+    // mirarlo. Salta lo que deje el piso (hasta 1.1 m): si atrás hay un muro, salta menos
+    sobresalto(x, z) {
+        const p = group.position; let dx = p.x - x, dz = p.z - z; const n = Math.hypot(dx, dz) || 1; dx /= n; dz /= n
+        group.rotation.y = Math.atan2(-dx, -dz)
+        let d = 1.1; while (d > 0.2 && !walkable(p.x + dx * d, p.z + dz * d)) d -= 0.15
+        salto = { t: 0, x0: p.x, z0: p.z, dx: dx * Math.max(0, d), dz: dz * Math.max(0, d), y: 0 }
+    },
+    get saltando() { return !!salto },
+    comer(v) { comiendo = v }, // la animación de comer (mientras dura el desayuno)
+    prota, // (debug: el visor de la protagonista usa sus poses)
+    // acostada de lado (encogida), con la cabeza en la almohada (-z) y mirando hacia +x: donde iría la pared junto a la cama.
+    // Orden ZYX: primero se acuesta boca arriba (giro en x) y después rueda sobre su costado (giro en z)
+    lieDown() { lying = true; sitting = false; group.rotation.set(-Math.PI / 2, 0, -Math.PI / 2, 'ZYX'); group.position.set(LIE.x, LIE.y, LIE.z) },
+    // sentada: un poco hacia el frente del cojín, para que las rodillas pasen el borde y las piernas no se metan en la silla
+    sit(s, lock = false) { sitting = true; seatLocked = lock; group.rotation.set(0, s.face, 0, 'XYZ'); group.position.set(s.x + Math.sin(s.face) * 0.1, SEAT_Y, s.z + Math.cos(s.face) * 0.1) },
+    unsit() { if (!sitting) return; sitting = false; seatLocked = false; group.position.set(group.position.x, 0, 0.25) }, // queda de pie en el pasillo, frente al asiento
+    get seatLocked() { return seatLocked },
     get sitting() { return sitting },
-    standUp(x, z) { lying = false; group.rotation.set(0, 0, 0); group.position.set(x, 0, z) },
+    standUp(x, z) { lying = false; group.rotation.set(0, 0, 0, 'XYZ'); group.position.set(x, 0, z) },
     get lying() { return lying },
     get x() { return group.position.x }, set x(v) { group.position.x = v },
     get z() { return group.position.z }, set z(v) { group.position.z = v },
     update(dt, t) {
-        let s = 1, bob = 0
-        let ix = (down('KeyD', 'ArrowRight') ? 1 : 0) - (down('KeyA', 'ArrowLeft') ? 1 : 0)
-        let iy = (down('KeyW', 'ArrowUp') ? 1 : 0) - (down('KeyS', 'ArrowDown') ? 1 : 0), push = 1
+        let s = 1, moving = false
+        let ix = (down('KeyD') ? 1 : 0) - (down('KeyA') ? 1 : 0) // solo WASD (las flechas no: no están en los controles)
+        let iy = (down('KeyW') ? 1 : 0) - (down('KeyS') ? 1 : 0), push = 1
         const jm = Math.hypot(runtime.joyX, runtime.joyY) // joystick táctil: la dirección es libre y empujarlo poco camina más lento
         if (jm > 0.2) { ix = runtime.joyX; iy = runtime.joyY; push = Math.min(1, 0.35 + jm * 0.9) }
         if (sitting && !seatLocked && (ix || iy)) this.unsit() // al moverte te levantas (salvo en el viaje de antes del sismo)
@@ -69,24 +126,56 @@ export const player = {
                 const vz = rel ? (-ix * Math.sin(a) - iy * Math.cos(a)) / n : -iy / n
                 // calle eterna: con mucha ansiedad caminas igual, pero avanzas menos
                 const slow = runtime.space === 'STREET' ? 1 - CONFIG.street.slow * endless() : 1
-                const sp = CONFIG.player.speed * slow * push * dt, p = group.position
+                const fast = 1 + CONFIG.player.anxSpeed * (runtime.visAnx ?? runtime.anxiety) // con más ansiedad camina más rápido (apurada)
+                const sp = CONFIG.player.speed * slow * fast * push * dt, p = group.position
                 if (walkable(p.x + vx * sp, p.z + vz * sp)) { p.x += vx * sp; p.z += vz * sp }
                 else if (walkable(p.x + vx * sp, p.z)) p.x += vx * sp
                 else if (walkable(p.x, p.z + vz * sp)) p.z += vz * sp
                 group.rotation.y = Math.atan2(vx, vz)
-                bob = Math.abs(Math.sin(t * 9)) * 0.12
+                moving = true
             }
         }
+        // Pose: acostada · sentada · caminando · asustada (en la crisis, al fallar o con mucha ansiedad) · de pie
+        andar += ((moving ? 1 : 0) - andar) * Math.min(1, dt * 8)
+        // con ansiedad camina apurada, casi corriendo (como en la referencia de carrera): de ansiedad 0.4 a 0.85
+        const apuro = Math.min(1, Math.max(0, ((runtime.visAnx ?? runtime.anxiety) - 0.4) / 0.45))
+        correr += ((moving ? apuro : 0) - correr) * Math.min(1, dt * 3)
+        if (moving) fase += dt * (8.5 + 4 * correr) // el paso se acelera con la carrera
+        // coger algo: el gesto dura gesto.dur s; a la mitad (cuando la mano llega) pasa alMedio
+        if (gesto) {
+            gesto.t += dt
+            if (!gesto.medio && gesto.t >= gesto.dur * 0.5) { gesto.medio = true; gesto.alMedio?.() }
+            if (gesto.t >= gesto.dur) { const fin = gesto.alFinal; gesto = null; fin?.() }
+        }
+        // asustada: desde que empieza la crisis hasta que se gana el minijuego (runtime.asustada lo maneja main.js), con un susto o con mucha ansiedad
+        const asustada = !lying && !sitting && !moving && !salto && !(trasSalto > 0) && (runtime.asustada || mode === 'agitated' || runtime.state === 'FAILURE' || (mode !== 'calm' && runtime.anxiety > 0.75))
+        susto += ((asustada ? 1 : 0) - susto) * Math.min(1, dt * 5)
+        if (salto) { // sobresalto: el cuerpo va hacia atrás y sube y baja con el salto
+            salto.t += dt; const p = salto.t / SALTO, j = saltoSusto(p)
+            group.position.x = salto.x0 + salto.dx * j.atras; group.position.z = salto.z0 + salto.dz * j.atras; salto.y = j.y
+            prota.pose('sobresalto', t, p)
+            if (p >= 1) { salto = null; trasSalto = 0.7 }
+        } else if (trasSalto > 0) { trasSalto -= dt; prota.pose('quieta', t) } // la pausa: quieta, todavía mirando lo que la asustó
+        else if (gesto) prota.pose('coger', t, gesto.t / gesto.dur)
+        else if (comiendo) prota.pose('comer', t)
+        else prota.pose(lying ? 'acostada' : sitting ? 'sentada' : andar > 0.05 ? 'caminar' : susto > 0.05 ? 'miedo' : 'quieta', andar > 0.05 ? fase : t, andar > 0.05 ? andar : susto, correr)
+        prota.aplicar(dt, salto ? 22 : 10) // el salto es rápido: los huesos siguen la pose sin retraso
+        const oscuro = (runtime.levelVis ?? -1) > 2.75 // nivel 3 de ansiedad: la versión oscura del modelo (como el resto de los modelos)
+        if ((runtime.levelVis ?? -1) > 2) prota.cargar('oscuro') // se prepara un poco antes de necesitarla
+        const { normal, oscuro: osc } = prota.versiones; if (normal && osc) { normal.visible = !oscuro; osc.visible = oscuro }
         if (!lying && !sitting) {
             const q = group.position, f = pullBack(q.x, q.z)
             if (f) { const dx = f.x - q.x, dz = f.z - q.z, d = Math.hypot(dx, dz), st = Math.min(d, 4 * dt); if (d > 1e-6) { q.x += dx / d * st; q.z += dz / d * st } }
         }
-        if (mode === 'agitated' || (mode !== 'calm' && runtime.anxiety > 0.75)) s = 1 + Math.sin(t * 22) * 0.05
-        else if (mode === 'guided') s = 1 + runtime.breathProgress * 0.15
-        else if (mode === 'calm') s = 1 + Math.sin(t * 1.5) * 0.02
-        group.scale.setScalar(s); if (sitting) group.scale.y = s * 0.85
-        if (lying) group.position.set(LIE.x, LIE.y + Math.sin(t * 1.5) * 0.01, LIE.z)
-        else if (sitting) group.position.y = 0.45
-        else group.position.y = bob
+        if (mode === 'guided') s = 1 + runtime.breathProgress * 0.06 // en la respiración el cuerpo se infla un poco al inhalar (el temblor de la ansiedad ahora es la pose asustada)
+        else if (mode === 'calm') s = 1 + Math.sin(t * 1.5) * 0.015
+        group.scale.setScalar(s)
+        if (lying) group.position.set(LIE.x - 0.05, LIE.y + 0.2 + Math.sin(t * 1.5) * 0.008, LIE.z) // (+0.2: de lado, el hombro queda sobre el colchón, no metido en él)
+        else if (sitting) group.position.y = SEAT_Y - 0.46 // la cadera queda sobre el cojín (las piernas, dobladas hacia el frente)
+        // de pie, caminando, con miedo o saltando: el cuerpo se apoya en la suela más baja de la pose de este cuadro (prota.piso). Antes era una
+        // fórmula fija del paso (alturaPaso) y al caminar los zapatos se metían hasta 4 cm en el piso. En el salto se suma el arco del aire
+        else group.position.y = (PISO[runtime.space] ?? 0) + 0.002 - prota.piso() + Math.max(0, salto?.y ?? 0)
+        // sentada, la maleta va sobre las piernas (en la espalda atravesaba el espaldar de la silla)
+        backpack.position.set(0, sitting ? -0.14 : 0, sitting ? 0.66 : 0); correas.forEach(c => { c.visible = !sitting })
     }
 }

@@ -77,11 +77,30 @@ function bell() { // campanita suave de la música tranquila (nota al azar de un
 }
 
 // 5. API pública (audio)
+// Sonidos grabados (static/audios): el terremoto y la sirena. Pasan por el mismo audio del juego, así que la pausa y "Música: OFF" también los afectan
+const playing = new Set()
+function playFile(url, { volume = 0.7, loop = false } = {}) {
+    if (!ctx || !fxOn) return null
+    const el = new Audio(url), g = ctx.createGain(); el.loop = loop; g.gain.value = volume
+    ctx.createMediaElementSource(el).connect(g); g.connect(ctx.destination)
+    const snd = {
+        el, g,
+        fade(d = 1.5) { // se apaga despacio (curva suave hasta 0, sin cortes) y se detiene
+            const t = ctx.currentTime, v = g.gain.value, curve = new Float32Array(32).map((_, i) => v * Math.cos(i / 31 * Math.PI / 2))
+            g.gain.cancelScheduledValues(t); g.gain.setValueCurveAtTime(curve, t, d); setTimeout(() => snd.stop(), d * 1000 + 300)
+        },
+        stop() { el.pause(); playing.delete(snd) }
+    }
+    el.addEventListener('ended', () => playing.delete(snd)); el.play().catch(() => {}); playing.add(snd)
+    return snd
+}
+
 export const audio = {
+    playFile,
     init, blip,
     setMusic(v) { musicOn = v; mix(lastA, true) },
-    setFx(v) { fxOn = v },
-    setPaused(v) { if (ctx) v ? ctx.suspend() : ctx.resume() }, // pausa universal: detiene todo el audio,
+    setFx(v) { fxOn = v; if (!v) playing.forEach(p => p.stop()) },
+    setPaused(v) { if (ctx) v ? ctx.suspend() : ctx.resume(); playing.forEach(p => v ? p.el.pause() : p.el.play().catch(() => {})) }, // pausa universal: detiene todo el audio,
     setIntensity(a) { lastA = a; if (!ctx) return; drone.frequency.value = 55 + a * 20; mix(a) },
     update(dt, anxiety) {
         beat -= dt // latido que se acelera con la ansiedad
