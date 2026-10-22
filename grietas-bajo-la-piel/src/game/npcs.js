@@ -8,12 +8,12 @@
 
 // 0. Imports
 import * as THREE from 'three'
-import { spaces, walkableIn, SEATS, SEAT_Y, MOM_SPOT, DRIVER_SEAT, STREET_X0, SEGS, ROUTE_LEN, routePoint } from './environment.js'
+import { spaces, walkableIn, SEATS, SEAT_Y, MOM_SPOT, DRIVER_SEAT, STREET_X0, SEGS, ROUTE_LEN, routePoint, GHOSTS } from './environment.js'
 import { CONFIG, runtime } from './config.js'
 import { player } from './player.js'
 
 // 1. Estado y modelo del NPC
-export const npcState = { near: 0, bumps: 0 } // near = gente cerca del personaje · bumps = choques acumulados
+export const npcState = { near: 0, bumps: 0, calms: 0 } // near = gente cerca del personaje · bumps = choques acumulados · calms = alucinaciones tocadas
 const black = new THREE.MeshStandardMaterial({ color: 0x0d0d10 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff })
 const bodyG = new THREE.ConeGeometry(0.42, 1.3, 12), headG = new THREE.SphereGeometry(0.38, 14, 10), eyeG = new THREE.SphereGeometry(0.075, 8, 6)
 const make = () => { // la cabeza y los ojos van en su propio grupo para poder girar la cabeza (sismo)
@@ -111,12 +111,29 @@ function placePhantom(p, sp) {
     }
     return false
 }
+// Mecánica secreta: tocar una alucinación (una persona que no existe o una falla de la ciudad) baja un poco la ansiedad: comprobar que no es
+// real ayuda a volver al presente. main.js muestra una frase cuando cambia npcState.calms
+let calmCool = 0
+function calmar() {
+    if (calmCool > 0 || runtime.paused) return
+    calmCool = 1.5; runtime.anxiety = Math.max(0, runtime.anxiety - 0.1); npcState.calms++
+}
+function touchGhosts(dt, sp) {
+    calmCool = Math.max(0, calmCool - dt)
+    for (const g of GHOSTS) {
+        if (g.space !== sp || !g.on) continue
+        const p = g.m.position, w = g.m.geometry.parameters, rot = Math.abs(g.m.rotation.y) > 0.1, hw = (rot ? w.depth : w.width) / 2 + 0.35, hd = (rot ? w.width : w.depth) / 2 + 0.35
+        if (Math.abs(player.x - p.x) < hw && Math.abs(player.z - p.z) < hd) { calmar(); g.calm = performance.now() + 9000; g.on = false; g.m.visible = false }
+    }
+}
 function updatePhantoms(dt, t, sp) {
+    touchGhosts(dt, sp)
     const n = sp === 'BUS' ? 0 : phantomCount(); let near = 0
     phantoms.forEach((p, i) => {
         if (i >= n) { p.g.visible = false; return }
         const pos = p.g.position, d = Math.hypot(pos.x - player.x, pos.z - player.z)
-        if (p.space !== sp || (p.t -= dt) <= 0 || d < 2.2) { if (!placePhantom(p, sp)) { p.g.visible = false; return } } // si te acercas, desaparece
+        if (d < 0.8 && p.g.visible) calmar() // mecánica secreta: si llegas a tocarla, no había nadie (te calma un poco)
+        if (p.space !== sp || (p.t -= dt) <= 0 || d < 0.8) { if (!placePhantom(p, sp)) { p.g.visible = false; return } } // si la tocas, desaparece (antes se iba apenas te acercabas a 2.2 m: no se podía tocar)
         p.g.visible = Math.random() > 0.08                                                     // titila
         p.g.rotation.y = Math.atan2(player.x - pos.x, player.z - pos.z)                       // te mira fijo
         p.echo.position.set(0.22 + Math.sin(t * 31 + i) * 0.12, 0.04, Math.cos(t * 23 + i) * 0.1) // eco desfasado (corrido hacia un lado)

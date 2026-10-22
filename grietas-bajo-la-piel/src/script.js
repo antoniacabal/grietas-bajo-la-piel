@@ -140,19 +140,32 @@ async function iniciarMuestra() {
     if (!canvas) return
 
     const THREE = await import('three')
-    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js')
 
     // 3.1 Canvas -----------------
     const contenedor = canvas.parentElement
+
+    // Calidad según el equipo: en celulares y equipos con poca memoria o pocos núcleos la muestra va más liviana (resolución 1, sin
+    // antialias, 30 cuadros por segundo y sin los contornos del glitch). Si aun así se pone lenta, baja la resolución sola (ver 3.9)
+    const nav = navigator
+    // (antes cualquier equipo con 4 núcleos o 4 GB contaba como liviano e iba a 24 cuadros: se veía lenta. Ahora solo celulares y equipos muy justos;
+    // en computador va a 60 y en liviano a 30)
+    const liviano = (nav.deviceMemory && nav.deviceMemory <= 2) || (nav.hardwareConcurrency && nav.hardwareConcurrency <= 2) || window.matchMedia('(pointer: coarse)').matches
+    let resolucion = liviano ? 1 : 1.5, fps = liviano ? 30 : 60
+    const pixeles = () => Math.min(window.devicePixelRatio || 1, resolucion)
+    // si no hay WebGL (o se pierde), queda la imagen de respaldo (index.html: .muestra-respaldo)
+    const sin3d = (v) => contenedor.classList.toggle('muestra-sin-3d', v)
 
     // 3.2 Escena -----------------
     const scene = new THREE.Scene()
 
     // 3.3 Luces -----------------
-    const luzAmbiente = new THREE.AmbientLight(0x8890b0, 0.9)
+    // la misma luz del juego en la mañana (scene.js + environment.js con la paleta normal): cálida, ambiente 0.7 y sol 1.3.
+    // Antes era fría y más débil (ambiente azulado 0.9, sol blanco 0.9) y la muestra se veía más oscura y dura que el juego
+    const CALIDA = 0xffd9a0, FRIA = 0x8899bb
+    const luzAmbiente = new THREE.AmbientLight(CALIDA, 0.7)
     scene.add(luzAmbiente)
 
-    const luzSol = new THREE.DirectionalLight(0xffffff, 0.9)
+    const luzSol = new THREE.DirectionalLight(CALIDA, 1.3) // (se mueve con la cámara: ver 3.7)
     luzSol.position.set(5, 10, 4)
     scene.add(luzSol)
 
@@ -162,9 +175,11 @@ async function iniciarMuestra() {
     scene.add(luzTension)
 
     // 3.4 Objetos: cuarto de prueba y protagonista -----------------
+    let cargados = 0 // cuando los dos archivos están (el cuarto y Gabriela), la muestra reemplaza a la imagen de respaldo
         // El cuarto de Gabriela sin paredes (Cuarto-prueba.fbx) como piso de la muestra, con ella de pie en medio, ansiosa.
         // Misma escala y colores del juego (environment.js), para que la muestra se vea como el juego
         const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js')
+        const { toCreasedNormals } = await import('three/addons/utils/BufferGeometryUtils.js')
         const SH = 0.0065 // escala del cuarto en el juego
         const COLORES = { Pared: '#A6869B', suelo: '#BF895A', Suelo: '#BF895A', Cafe: '#A16A49', 'Cafe claro': '#BF895A', Naranja: '#BF4E24', Colchon: '#A6869B', Cortina: '#F2C063', Amarillo: '#F2C063', Material: '#799180', Salida: '#71708A' }
         // pareja de ansiedad de cada color (la misma de environment.js): en el glitch el cuarto cambia a estos colores
@@ -180,6 +195,7 @@ async function iniciarMuestra() {
         const cuarto = new THREE.Group()
         scene.add(cuarto)
         const contornoMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }), contornos = []
+        const siluetaMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true, opacity: 0.85 }) // (ver silueta, más abajo)
         // piso más grueso: una losa debajo del piso del modelo, del mismo color (también cambia en el glitch)
         // del mismo tamaño que la base del modelo (en el archivo va de x -371.4 a 369.4 y de z -329.5 a 328.9) y justo debajo de ella: al ras
         const losa = new THREE.Mesh(new THREE.BoxGeometry(740.8 * SH, 0.34, 658.4 * SH), pintar({ name: 'suelo' }))
@@ -196,7 +212,13 @@ async function iniciarMuestra() {
         celular.position.set((-290 + 19) * SH, 1.02, -0.25 + 5 * SH); cuarto.add(celular)
         const celularContorno = new THREE.LineSegments(new THREE.EdgesGeometry(celular.geometry), contornoMat); celularContorno.visible = false; celular.add(celularContorno); contornos.push(celularContorno)
         new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
+            cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender
+            // bordes nítidos solo en las piezas en forma de caja (armario, libros, colchón, estructura de la cama, base): el archivo trae las
+            // normales promediadas y el sombreado suave les "redondeaba" las esquinas, con manchas en los costados. Lo redondeado de verdad
+            // (escritorio, cojines, silla, juguetes) sigue suave
+            const CAJAS = /^(Armario|Books2?|Colchon|Patas_cama|Pared)$/
+            o.traverse(c => { if (c.isMesh && CAJAS.test(c.name)) c.geometry = toCreasedNormals(c.geometry, Math.PI / 5) }) // (también las de varios materiales: conserva sus grupos)
             o.traverse(c => { if (c.isMesh) c.material = Array.isArray(c.material) ? c.material.map(pintar) : pintar(c.material) })
             o.scale.setScalar(SH)
             o.position.set(19 * SH, -24 * SH, 5 * SH) // centrado (el archivo va de x -407 a 369 y de z -340 a 329) y con el piso (y = 24) en 0
@@ -205,9 +227,18 @@ async function iniciarMuestra() {
             o.updateMatrixWorld(true)
             // (sin los bordes de abajo de la base: ahí se junta con la losa y quedaba una raya blanca en medio del piso)
             const aArchivo = new THREE.Matrix4(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3(), inversa = o.matrixWorld.clone().invert()
-            o.traverse(c => {
-                if (!c.isMesh) return
-                const bordes = new THREE.EdgesGeometry(c.geometry, 35), p = bordes.attributes.position, quedan = []
+            // el escritorio (Tabla) tiene los bordes biselados (varias caras pequeñas en cada borde): marcando bordes salía sin contorno (35°)
+            // o con muchas líneas juntas (10°). Para él se dibuja solo la silueta: una copia un poco inflada, blanca y por detrás
+            const silueta = (c) => {
+                // 2.2 unidades del archivo hacia afuera (la pieza puede traer su propia escala: se convierte a sus unidades)
+                const escala = new THREE.Vector3().setFromMatrixScale(aArchivo.multiplyMatrices(inversa, c.matrixWorld)), k = 2.2 / ((Math.abs(escala.x) + Math.abs(escala.y) + Math.abs(escala.z)) / 3)
+                const g = c.geometry.clone(), p = g.attributes.position, n = g.attributes.normal
+                for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + n.getX(i) * k, p.getY(i) + n.getY(i) * k, p.getZ(i) + n.getZ(i) * k)
+                const m = new THREE.Mesh(g, siluetaMat); m.visible = !!tick.glitch; c.add(m); contornos.push(m)
+            }
+            const contornoDe = (c) => {
+                if (c.name === 'Tabla') return silueta(c)
+                const bordes = new THREE.EdgesGeometry(c.geometry, c.name === 'pc' ? 20 : 35), p = bordes.attributes.position, quedan = []
                 aArchivo.multiplyMatrices(inversa, c.matrixWorld)
                 for (let i = 0; i < p.count; i += 2) {
                     v1.fromBufferAttribute(p, i).applyMatrix4(aArchivo); v2.fromBufferAttribute(p, i + 1).applyMatrix4(aArchivo)
@@ -215,8 +246,13 @@ async function iniciarMuestra() {
                     quedan.push(p.getX(i), p.getY(i), p.getZ(i), p.getX(i + 1), p.getY(i + 1), p.getZ(i + 1))
                 }
                 const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(quedan, 3))
-                const l = new THREE.LineSegments(g, contornoMat); l.visible = false; c.add(l); contornos.push(l)
-            })
+                const l = new THREE.LineSegments(g, contornoMat); l.visible = !!tick.glitch; c.add(l); contornos.push(l)
+            }
+            // de a poco, en los ratos libres del navegador (el glitch tarda unos segundos en llegar; si llega antes, se ven los que ya estén)
+            const pendientes = []; if (!liviano) o.traverse(c => { if (c.isMesh) pendientes.push(c) }) // (en equipos livianos el glitch va sin contornos)
+            const ocioso = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 60))
+            const seguir = (plazo) => { while (pendientes.length && plazo.timeRemaining() > 3) contornoDe(pendientes.shift()); if (pendientes.length) ocioso(seguir) }
+            ocioso(seguir)
         })
 
         // Gabriela (assets/protagonista/Personaje.fbx). MUESTRA: es una copia del armado del juego (game/personaje.js), para que la
@@ -281,7 +317,7 @@ async function iniciarMuestra() {
             pon(0, B.cadera, 1 - e); pon(1, B.espalda, e * (1 - k)); pon(2, B.cabeza, e * k)
         }
         function armar(fbx, escala) {
-            const cont = new THREE.Group(), bones = {}
+            const cont = new THREE.Group(), bones = {}, suela = []
             NAMES.forEach(n => { const [p, x, y, z] = JOINTS[n], b = new THREE.Bone(); b.name = n; const q = p ? JOINTS[p] : [0, 0, 0, 0]; b.position.set(x - q[1], y - q[2], z - q[3]); bones[n] = b; if (p) bones[p].add(b) })
             cont.add(bones.raiz); cont.updateMatrixWorld(true)
             const skeleton = new THREE.Skeleton(NAMES.map(n => bones[n]))
@@ -300,13 +336,15 @@ async function iniciarMuestra() {
                 g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(w, 4))
                 const sm = new THREE.SkinnedMesh(g, Array.isArray(c.material) ? c.material.map(materialDe) : materialDe(c.material))
                 sm.frustumCulled = false; sm.bind(skeleton, new THREE.Matrix4()); cont.add(sm)
+                // suela: unos cuantos vértices de la base de los zapatos (repartidos), para saber dónde queda el pie en cada pose (ver piso)
+                if (c.name === 'Zapatos') { const v = []; for (let i = 0; i < n; i++) if (pos.getY(i) < 1.5) v.push(i); const paso = Math.max(1, Math.floor(v.length / 80)); suela.push(...v.filter((_, k) => k % paso === 0).map(i => [sm, i])) }
             })
             // enagua: un disco oscuro dentro de la falda, un poco arriba del borde, pegado a la cadera. Sin él, por debajo de la falda
             // se veía su interior claro (y a través de ella)
             const enagua = new THREE.Mesh(new THREE.CylinderGeometry(15.5, 15.5, 1.2, 24), new THREE.MeshStandardMaterial({ color: 0x15111c, roughness: 1 }))
             enagua.scale.set(1.05, 1, 0.82); enagua.position.set(0, 37.5 - 42, -4.3); bones.cadera.add(enagua)
             cont.scale.setScalar(escala)
-            return { cont, bones }
+            return { cont, bones, suela }
         }
 
         const personaje = new THREE.Group()
@@ -316,6 +354,7 @@ async function iniciarMuestra() {
         let prota = null
         const ALTO_MUESTRA = 2.15 // un poco más alta que en el juego (1.8): en la muestra se veía muy pequeña al lado de los muebles
         new FBXLoader().load('assets/protagonista/Personaje.fbx', (o) => {
+            cargados++
             try { prota = armar(o, ALTO_MUESTRA / MODELO); personaje.add(prota.cont) }
             catch (error) { // si armar el esqueleto falla, igual se ve (quieta, con sus colores)
                 console.error('Muestra: no se pudo animar a la protagonista', error)
@@ -333,7 +372,7 @@ async function iniciarMuestra() {
         // Idle contento (la muestra del index), como un idle alegre de anime: rebota suave doblando las rodillas, con el peso en una pierna y la
         // otra suelta (rodilla adelante y un poco hacia adentro, el talón levantado que sube y baja, apoyada en la punta). Los pies no se
         // despegan del piso: el tobillo compensa lo que se doblan la rodilla y el muslo. Los puños sueltos cerca del mentón, los codos abajo y
-        // pegados, rebotando con el cuerpo; cada tanto levanta un puño, mira alrededor o pasa el peso a la otra pierna
+        // pegados, rebotando con el cuerpo; cada tanto mira alrededor o pasa el peso a la otra pierna
         const PIERNA = 20 // largo del muslo y de la pierna (unidades del archivo)
         function posarFeliz(meta, t) {
             const w = paso(-0.25, 0.25, Math.sin(t * 0.35)) * 2 - 1        // 1: peso en la pierna I · -1: en la D (cambia cada ~9 s)
@@ -359,12 +398,9 @@ async function iniciarMuestra() {
             meta.antebrazoI.y = -2.3; meta.antebrazoD.y = 2.3
             meta.manoI.z = -0.35; meta.manoD.z = 0.35; meta.manoI.x = meta.manoD.x = -0.2
             mano(meta, 1.5)                                                  // puños cerrados
-            // cada 7 s levanta un puño, contenta (como cuando celebra)
-            const g = t % 7, festeja = Math.max(0, Math.min(1, (g - 4.5) / 0.25, (5.6 - g) / 0.25))
-            meta.brazoD.x -= 0.55 * festeja; meta.antebrazoD.y += 0.25 * festeja; meta.cabeza.z = -0.12 * festeja
             // cabeza: ladeada siguiendo el rebote, y mira alrededor de vez en cuando
             const mira = paso(-0.2, 0.2, Math.sin(t * 0.23 + 1)) * 2 - 1
-            meta.cabeza.y = 0.3 * mira; meta.cabeza.z += 0.08 * Math.sin(t * 2.6 - 0.5) - 0.04 * w; meta.cabeza.x = -0.06 + 0.04 * rebote + 0.015 * resp
+            meta.cabeza.y = 0.3 * mira; meta.cabeza.z = 0.08 * Math.sin(t * 2.6 - 0.5) - 0.04 * w; meta.cabeza.x = -0.06 + 0.04 * rebote + 0.015 * resp
             return alturaFeliz(t)
         }
         // cuánto baja el cuerpo al doblar la rodilla de apoyo (en unidades del juego para alto 1.8): así los pies no se meten en el piso
@@ -404,8 +440,15 @@ async function iniciarMuestra() {
             codos(meta) // los codos de ayuda giran la mitad que el antebrazo
             const f = Math.min(1, dt * rapido)
             NAMES.forEach(n => { giro[n].lerp(meta[n], f); prota?.bones[n].rotation.set(giro[n].x, giro[n].y, giro[n].z) })
-            personaje.position.y += (0.015 + y - personaje.position.y) * f
+            // los pies sobre el piso: el cuerpo se apoya en la suela más baja de la pose de este cuadro (como prota.piso() en el juego).
+            // Antes la altura salía de una fórmula y los zapatos se metían un poco en el piso
+            if (prota?.suela?.length) {
+                personaje.updateMatrixWorld(true); inversa.copy(personaje.matrixWorld).invert()
+                let min = Infinity; for (const [sm, i] of prota.suela) { sm.getVertexPosition(i, punto); punto.applyMatrix4(sm.matrixWorld).applyMatrix4(inversa); if (punto.y < min) min = punto.y }
+                personaje.position.y = 0.004 - min
+            } else personaje.position.y += (0.015 + y - personaje.position.y) * f
         }
+        const punto = new THREE.Vector3(), inversa = new THREE.Matrix4()
 
     // 3.5 Tamaños -----------------
     const sizes = {
@@ -426,111 +469,34 @@ async function iniciarMuestra() {
         const camera = new THREE.OrthographicCamera(-vista * aspecto / 2, vista * aspecto / 2, vista / 2, -vista / 2, -50, 100)
         scene.add(camera)
 
-        camera.position.set(10, 8.2, 10)
-        camera.lookAt(0, 0.9, 0)
 
-    // 3.7 Controles -----------------
+    // 3.7 Giro -----------------
+    // Sin controles: cámara isométrica fija (la misma del juego: 45° de lado y 35.26° de alto) que se mece despacio alrededor del cuarto,
+    // así la muestra gira sola. Con "reducir movimiento" en el sistema igual gira (antes se quedaba quieta y parecía rota), pero más despacio
     const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-    const controls = new OrbitControls(camera, canvas)
-    controls.target.set(0, 0.9, 0)
-    controls.enableDamping = true
-    controls.dampingFactor = 0.08
-    controls.enableRotate = true
-    controls.enableZoom = true
-    controls.enablePan = false
-    controls.minZoom = 0.8
-    controls.maxZoom = 1.1
-    controls.minPolarAngle = Math.PI * 0.1
-    controls.maxPolarAngle = Math.PI / 2
-
-    controls.autoRotate = !sinMovimiento
-    controls.autoRotateSpeed = 2
-
-    let temporizadorGiro = null
-
-    controls.addEventListener('start', () =>
+    const ELEVACION = Math.atan(1 / Math.SQRT2), DISTANCIA = 14, CENTRO = new THREE.Vector3(0, 0.9, 0)
+    const VUELTA = sinMovimiento ? 60 : 30 // segundos por ida y vuelta
+    const girarCamara = (t) =>
     {
-        clearTimeout(temporizadorGiro)
-        controls.autoRotate = false
-        canvas.style.cursor = 'grabbing'
-    })
-
-    controls.addEventListener('end', () =>
-    {
-        canvas.style.cursor = 'grab'
-        if (sinMovimiento) return
-        temporizadorGiro = setTimeout(() => { controls.autoRotate = true }, 2000)
-    })
-
-    canvas.style.cursor = 'grab'
-
-    // Pistas de giro y zoom: aparecen en cada visita, después de un rato con la muestra a la vista,
-    // y cada una se va cuando el usuario usa ese control (al volver a la página aparecen de nuevo)
-    const pistas = contenedor.querySelector('.muestra-pistas')
-    const usadas = { giro: false, zoom: false }
-    let pistasVisibles = false
-
-    const actualizarPistas = () =>
-    {
-        if (!pistas) return
-        pistas.classList.toggle('mostrar-giro', pistasVisibles && !usadas.giro)
-        pistas.classList.toggle('mostrar-zoom', pistasVisibles && !usadas.zoom)
+        // se mece de un lado a otro (±35°) alrededor de la vista del juego, sin dar la vuelta completa: por detrás se veían las espaldas de
+        // los muebles (el armario, el escritorio), que en el juego nunca se ven y quedaban oscuras y raras
+        const az = Math.PI / 4 + 0.6 * Math.sin(t * Math.PI * 2 / VUELTA)
+        camera.position.set(CENTRO.x + DISTANCIA * Math.cos(ELEVACION) * Math.sin(az), CENTRO.y + DISTANCIA * Math.sin(ELEVACION), CENTRO.z + DISTANCIA * Math.cos(ELEVACION) * Math.cos(az))
+        camera.lookAt(CENTRO)
+        // el sol gira con la cámara, un poco a su derecha y desde arriba, como en el juego (scene.js: la luz viene casi desde donde mira la cámara).
+        // Con el sol quieto, al girar se veían las caras de atrás del armario y de la cama muy oscuras y con manchas
+        luzSol.position.set(CENTRO.x + 10 * Math.sin(az + 0.14), 14, CENTRO.z + 10 * Math.cos(az + 0.14)) // (la misma altura que en el juego)
     }
-
-    const usar = (clave) =>
-    {
-        if (usadas[clave]) return
-        usadas[clave] = true
-        actualizarPistas()
-    }
-
-    if (pistas)
-    {
-        const aLaVista = () => { const caja = contenedor.getBoundingClientRect(); return caja.bottom > window.innerHeight * 0.3 && caja.top < window.innerHeight * 0.7 }
-        const mostrar = () =>
-        {
-            if (!aLaVista()) return
-            pistasVisibles = true
-            actualizarPistas()
-            window.removeEventListener('scroll', mostrar)
-        }
-        const programar = () => setTimeout(() => { mostrar(); if (!pistasVisibles) window.addEventListener('scroll', mostrar, { passive: true }) }, 4000) // si la muestra no está a la vista, espera a que vuelvan a ella
-        programar()
-        window.addEventListener('pageshow', (e) => // al volver con "atrás" el navegador restaura la página tal cual: las pistas vuelven a empezar
-        {
-            if (!e.persisted) return
-            usadas.giro = usadas.zoom = pistasVisibles = false
-            actualizarPistas()
-            programar()
-        })
-    }
-
-    // Giro: el ángulo cambió entre que se agarró y se soltó la muestra
-    let anguloInicial = null
-    controls.addEventListener('start', () => { anguloInicial = [controls.getAzimuthalAngle(), controls.getPolarAngle()] })
-    controls.addEventListener('end', () =>
-    {
-        if (!anguloInicial) return
-        const giro = Math.abs(controls.getAzimuthalAngle() - anguloInicial[0]) + Math.abs(controls.getPolarAngle() - anguloInicial[1])
-        if (giro > 0.08) usar('giro')
-        anguloInicial = null
-    })
-
-    // Zoom: rueda del mouse o pellizco con dos dedos (cuenta aunque ya esté en el límite del zoom)
-    const dedos = new Set()
-    canvas.addEventListener('wheel', () => usar('zoom'), { passive: true })
-    canvas.addEventListener('pointerdown', (e) => { dedos.add(e.pointerId); if (dedos.size >= 2) usar('zoom') })
-    ;['pointerup', 'pointercancel'].forEach(tipo => canvas.addEventListener(tipo, (e) => dedos.delete(e.pointerId)))
+    girarCamara(0)
 
     // 3.8 Render -----------------
-    canvas.addEventListener('webglcontextlost', (e) => e.preventDefault()) // permite que el navegador lo devuelva (webglcontextrestored): sin esto la muestra desaparecía para siempre
-    const renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        alpha: true,
-        antialias: true
-    })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    // si el navegador pierde el WebGL (pasa en celulares con poca memoria), se ve la imagen de respaldo hasta que lo devuelva
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); sin3d(true) }) // preventDefault: permite que el navegador lo devuelva
+    canvas.addEventListener('webglcontextrestored', () => sin3d(false))
+    let renderer
+    try { renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: !liviano, powerPreference: liviano ? 'low-power' : 'default' }) }
+    catch { return sin3d(true) } // sin WebGL: se queda la imagen
+    renderer.setPixelRatio(pixeles())
     renderer.setSize(sizes.width, sizes.height, false)
 
     const resizeObserver = new ResizeObserver(() =>
@@ -550,36 +516,52 @@ async function iniciarMuestra() {
         camera.updateProjectionMatrix()
 
         // Actualizar renderizador (también la resolución: si cambia el zoom del navegador o la pantalla, no queda pixelado)
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        renderer.setPixelRatio(pixeles())
         renderer.setSize(sizes.width, sizes.height, false)
     })
     resizeObserver.observe(contenedor)
-    window.addEventListener('resize', () => renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))) // el zoom del navegador puede no cambiar el tamaño del contenedor
+    window.addEventListener('resize', () => renderer.setPixelRatio(pixeles())) // el zoom del navegador puede no cambiar el tamaño del contenedor
 
     // 3.9 Animación -----------------
     const clock = new THREE.Clock()
 
+    // fuera de la pantalla no se dibuja: así no le quita fuerza al derrumbe que viene debajo (antes se trababa a veces)
+    let aLaVista = true
+    new IntersectionObserver(([e]) => { aLaVista = e.isIntersecting; tick.dibujado = undefined }).observe(contenedor)
+    const medida = { suma: 0, n: 0 }
     const tick = () =>
     {
+        if (!aLaVista) { tick.antes = undefined; return void window.requestAnimationFrame(tick) }
         const tiempo = clock.getElapsedTime()
+        if (tiempo - (tick.dibujado ?? -1) < 1 / (fps + 4)) return void window.requestAnimationFrame(tick) // (máximo 60 o 30 por segundo)
+        // si los cuadros tardan mucho más de lo esperado (el equipo no da abasto), baja la resolución (los cuadros por segundo se quedan:
+        // bajarlos era lo que la hacía ver a saltos)
+        if (tick.dibujado !== undefined && tiempo - tick.dibujado < 1) { medida.suma += tiempo - tick.dibujado; medida.n++ }
+        if (medida.n >= 45) {
+            if (medida.suma / medida.n > 1.6 / fps && resolucion > 0.75) { resolucion = Math.max(0.75, resolucion - 0.25); renderer.setPixelRatio(pixeles()); renderer.setSize(sizes.width, sizes.height, false) }
+            medida.suma = medida.n = 0
+        }
+        tick.dibujado = tiempo
 
         // Glitch de ansiedad: casi siempre el cuarto se ve normal y Gabriela está contenta, pero cada tanto, por un segundo, la imagen
         // "falla": se enciende la luz roja, el cuarto toma los colores de la ansiedad (los del juego) y ella se tapa la cara con miedo.
-        // Entra y sale con parpadeos, como una señal que se corta. Si el usuario prefiere menos movimiento, no hay glitch y queda quieta
+        // Entra y sale con parpadeos, como una señal que se corta. Con "reducir movimiento" en el sistema igual pasa (antes no había nada y la
+        // muestra parecía rota), pero sin parpadeos ni sacudidas: solo cambian los colores y la pose
         const dt = Math.min(0.1, tiempo - (tick.antes ?? tiempo)); tick.antes = tiempo
         const ciclo = tiempo % 7, dentro = ciclo > 5.2 && ciclo < 6.3                      // un segundo de cada siete
         const borde = ciclo < 5.45 || ciclo > 6.05, parpadeo = borde && Math.sin(tiempo * 60) > 0 // al entrar y al salir parpadea
-        const glitch = !sinMovimiento && dentro && !parpadeo
-        if (glitch !== tick.glitch) { tick.glitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.55 : 0.9; contornos.forEach(l => { l.visible = glitch }) }
+        const glitch = dentro && (sinMovimiento || !parpadeo)
+        if (glitch !== tick.glitch) { tick.glitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.5 : 0.7; luzAmbiente.color.setHex(glitch ? FRIA : CALIDA); luzSol.color.setHex(glitch ? FRIA : CALIDA); contornos.forEach(l => { l.visible = glitch }) }
         luzTension.intensity = glitch ? 2.6 + Math.sin(tiempo * 40) * 0.8 : 0
-        canvas.style.transform = glitch ? `translate(${(Math.random() * 6 - 3).toFixed(1)}px, ${(Math.random() * 2 - 1).toFixed(1)}px)` : ''
+        canvas.style.transform = glitch && !sinMovimiento ? `translate(${(Math.random() * 6 - 3).toFixed(1)}px, ${(Math.random() * 2 - 1).toFixed(1)}px)` : ''
         canvas.style.filter = glitch ? 'contrast(1.15) saturate(1.2)' : ''
-        posar(tiempo, sinMovimiento ? "quieta" : glitch || (dentro && tick.glitchVisto) ? "miedo" : "feliz", sinMovimiento ? 1 : dt, glitch ? 12 : 8) // (más suave: con 22 las manos saltaban y se trababan)
+        posar(tiempo, glitch || (dentro && tick.glitchVisto) ? "miedo" : "feliz", dt, glitch ? 12 : 8) // (más suave: con 22 las manos saltaban y se trababan)
         tick.glitchVisto = dentro
 
-        controls.update()
+        girarCamara(tiempo)
 
         renderer.render(scene, camera)
+        if (cargados >= 2 && !tick.lista) { tick.lista = true; contenedor.classList.add('muestra-lista') } // ya está todo: se cambia la imagen por la muestra
 
         window.requestAnimationFrame(tick)
     }
@@ -642,7 +624,7 @@ async function iniciarMapa() {
     // Se dibuja en un canvas fijo encima de la página, así los pedazos que caen no agrandan la página ni crean scroll
 function iniciarDerrumbe() {
     const escena = document.querySelector('.pagina-inicio .escena'), contenido = document.querySelector('.pagina-inicio .contenido')
-    if (!escena || !contenido || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (!escena || !contenido) return // (también con "reducir movimiento": va con el scroll, lo maneja la persona; antes no salía y la página parecía rota)
     const raiz = document.documentElement
 
     // Espacio oscuro extra entre la muestra y los recursos: ahí ocurre el derrumbe
@@ -668,12 +650,12 @@ function iniciarDerrumbe() {
     // Arma el techo: una malla de puntos movidos al azar; cada celda (o media celda) es un pedazo.
     // Las coordenadas son relativas al borde de arriba del espacio oscuro
     function armar() {
-        vh = window.innerHeight; W = raiz.clientWidth; dpr = Math.min(window.devicePixelRatio || 1, 2)
+        vh = window.innerHeight; W = raiz.clientWidth; dpr = Math.min(window.devicePixelRatio || 1, 1.25) // formas planas: con 1.25 se ve igual que con 2 y son la mitad de píxeles
         lienzo.width = Math.round(W * dpr); lienzo.height = Math.round(vh * dpr)
         lienzo.style.width = W + 'px'; lienzo.style.height = vh + 'px'
         espacio.style.height = ''; altoEspacio = espacio.offsetHeight // el alto lo decide el CSS (.derrumbe-espacio)
         alto = altoEspacio // el techo ocupa solo el espacio oscuro: los pedazos caen sobre los recursos, pero nunca los tapan quietos
-        piezas = []; bordes = []; polvo = []; inicial = true
+        piezas = []; bordes = []; polvo = []; inicial = true; medido = -1e9; ultimaClave = '' // (vuelve a medir dónde está el techo)
 
         const x0 = -30, ancho = W + 60, y0 = -40 // más grande que la pantalla y 40 px montado sobre la escena: al temblar no se ven los bordes ni la unión
         const tam = Math.min(68, Math.max(38, W / 24)) // pedazos más pequeños (antes hasta 105 px): se ve más como escombro
@@ -688,7 +670,7 @@ function iniciarDerrumbe() {
             }
         }
         // Cuántas filas de arriba quedan pegadas en cada columna (el borde roto del techo)
-        const base = Math.max(1, Math.round((altoEspacio * 0.65 - y0) / ch)) // la parte de arriba se queda: solo se rompe lo de abajo, cerca de los recursos
+        const base = Math.max(1, Math.round((altoEspacio * 0.82 - y0) / ch)) // (antes 0.65: quedaba mucho espacio claro antes de los recursos) la parte de arriba se queda: solo se rompe lo de abajo, cerca de los recursos
         banda = y0 + base * ch
         // detrás del techo que no se cae, el espacio también es del color de la escena: aunque el dibujo se corra un pixel, no asoma nada claro
         espacio.style.background = `linear-gradient(to bottom, var(--color-escena) ${Math.max(0, banda - ch * 0.5).toFixed(0)}px, transparent ${Math.max(0, banda - ch * 0.5).toFixed(0)}px)`
@@ -713,6 +695,8 @@ function iniciarDerrumbe() {
                 tarde: rnd(0.6, 0.9),          // …o cuando el derrumbe ya va por aquí
                 dx: 0, dy: 0, vx: 0, vy: 0, ang: 0, va: 0, luz: rnd(4, 10)
             }
+            pieza.col = color(cy); pieza.colLuz = color(cy, pieza.luz) // (los colores se calculan una vez: antes se armaba el texto en cada cuadro)
+            pieza.camino = camino(pieza.pts); pieza.radio = Math.max(...pieza.pts.map(([x, y]) => Math.hypot(x, y))) + 10 // (el camino también: antes se rearmaba en cada cuadro)
             piezas.push(pieza)
             ids.forEach((k, n) => agregarBorde(k, ids[(n + 1) % ids.length], pieza))
         }
@@ -763,13 +747,15 @@ function iniciarDerrumbe() {
     // Así nada tiembla mientras se ve la muestra del juego: el temblor empieza ya en el pedazo de la animación
     const progreso = (yTecho) => lim((vh * 0.62 - (yTecho + banda - window.scrollY)) / (vh * 0.4 + alto - banda))
 
-    let anterior = performance.now(), activo = false, pMax = 0
+    let anterior = performance.now(), activo = false, pMax = 0, yTechoMedido = 0, medido = -1e9, ultimaClave = ''
     // lo que tiembla: el contenido de la escena (texto y muestra) y los recursos, cada uno por dentro. El fondo oscuro de la escena se queda quieto:
     // si se movía todo el main, por los bordes asomaba el fondo claro de la página
     const sacudibles = [...escena.children, contenido]
     function cuadro(ahora) {
         const dt = Math.min(0.05, (ahora - anterior) / 1000); anterior = ahora
-        const yTecho = espacio.getBoundingClientRect().top + window.scrollY // posición del techo en la página
+        // posición del techo en la página: se mide cada medio segundo (medirla en cada cuadro obligaba al navegador a recalcular la página)
+        if (!(ahora - medido < 500)) { yTechoMedido = espacio.getBoundingClientRect().top + window.scrollY; medido = ahora }
+        const yTecho = yTechoMedido
         const sy = window.scrollY
         const p = pMax = Math.max(pMax, progreso(yTecho)) // el derrumbe pasa una sola vez: al subir no se rearma (vuelve al recargar o al regresar a la página)
         const grieta = tramo(p, 0.06, 0.42) * alcance // hasta dónde llegaron las grietas
@@ -779,7 +765,10 @@ function iniciarDerrumbe() {
 
         // Todo tiembla junto: la escena y el contenido (main) y el techo (más abajo se dibuja con tx, ty)
         const sacudir = temblor > 0.01 ? `${tx.toFixed(1)}px ${ty.toFixed(1)}px` : ''
-        sacudibles.forEach(el => { if (el.style.translate !== sacudir) el.style.translate = sacudir })
+        sacudibles.forEach(el => {
+            if (el.style.translate === sacudir) return
+            el.style.translate = sacudir; el.style.willChange = sacudir ? 'translate' : '' // mientras tiembla va en su propia capa: moverlo no repinta la página entera
+        })
 
         // ¿Qué pedazos se caen? (una vez que se cae, ya no vuelve)
         piezas.forEach(pz => {
@@ -820,72 +809,86 @@ function iniciarDerrumbe() {
         polvo = polvo.filter(q => q.tipo === 'piedra' ? q.vida > 0 : q.edad < q.vida)
 
         // Dibujo (en coordenadas de la página, corridas por el scroll)
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.clearRect(0, 0, W, vh)
         const arriba = yTecho - sy
         const visible = arriba < vh && arriba + alto > 0
-        const cayendo = piezas.some(pz => pz.estado === 'cayendo')
+        let cayendo = false, sueltas = false, apareciendo = false
+        for (const pz of piezas) { if (pz.estado === 'cayendo') cayendo = true; else if (pz.estado === 'suelta') sueltas = true; else if (pz.alfa < 1) apareciendo = true }
+        // si nada se mueve (sin temblor, nada cayendo, sin polvo) y el scroll y el avance son los mismos que en el cuadro anterior, el
+        // dibujo sería idéntico: no se redibuja y la animación descansa hasta el próximo scroll (antes redibujaba todo en cada cuadro)
+        const quieto = temblor <= 0.01 && !cayendo && !sueltas && !apareciendo && polvo.length === 0
+        const clave = sy + '|' + p.toFixed(4) + '|' + vh + '|' + W
+        if (quieto && clave === ultimaClave) { activo = false; return }
+        ultimaClave = clave
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, W, vh)
+        // dibuja un camino ya armado (Path2D) en x, y (coordenadas de pantalla) con un giro: sin save / restore por pedazo
+        const enPantalla = (x, y, ang = 0) => { const c = Math.cos(ang) * dpr, sn = Math.sin(ang) * dpr; ctx.setTransform(c, sn, -sn, c, x * dpr, y * dpr) }
         if (visible) {
-            ctx.save(); ctx.translate(0, arriba)
-            // pedazos en su lugar (los que no son del borde de arriba tiemblan)
-            ctx.lineJoin = 'round'
-            piezas.forEach(pz => {
-                if (pz.estado !== 'puesta' && pz.estado !== 'suelta') return
-                const m = 1, sacude = pz.estado === 'suelta' ? 1.5 : 0
+            ctx.lineJoin = 'round'; ctx.lineWidth = 1
+            // pedazos en su lugar (solo los que se ven: el resto queda fuera de la pantalla)
+            for (const pz of piezas) {
+                if (pz.estado !== 'puesta' && pz.estado !== 'suelta') continue
+                const y = arriba + pz.cy
+                if (y < -pz.radio || y > vh + pz.radio) continue
+                const sacude = pz.estado === 'suelta' ? 1.5 : 0
                 ctx.globalAlpha = pz.alfa
-                trazar(pz.pts, pz.cx + tx * m + rnd(-sacude, sacude), pz.cy + ty * m + rnd(-sacude, sacude))
-                ctx.fillStyle = color(pz.cy); ctx.fill()
-                ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1; ctx.stroke() // tapa las rayitas entre pedazos
-            })
+                enPantalla(pz.cx + tx + (sacude && rnd(-sacude, sacude)), y + ty + (sacude && rnd(-sacude, sacude)))
+                ctx.fillStyle = pz.col; ctx.fill(pz.camino)
+                ctx.strokeStyle = pz.col; ctx.stroke(pz.camino) // tapa las rayitas entre pedazos
+            }
             ctx.globalAlpha = 1
             // grietas entre dos pedazos en su lugar · borde roto (con grosor) donde ya se cayó el vecino
-            bordes.forEach(b => {
-                const puestas = b.piezas.filter(pz => pz.estado === 'puesta' || pz.estado === 'suelta')
-                if (!puestas.length) return
-                const m = 1 // todo el techo tiembla igual: si el borde fijo se moviera menos, entre los dos se abría una rendija clara
-                const ax = b.a[0] + tx * m, ay = b.a[1] + ty * m, bx = b.b[0] + tx * m, by = b.b[1] + ty * m
-                if (puestas.length === 2) {
-                    if (b.d > grieta || puestas[0].fija || puestas[1].fija) return // la parte de arriba (que no se cae) no se agrieta: si no, entre la escena y el derrumbe quedaba una raya
-                    const a = lim((grieta - b.d) / 60)
-                    const zig = (dy) => { ctx.beginPath(); ctx.moveTo(ax, ay + dy); b.zig.forEach(([x, y]) => ctx.lineTo(x + tx * m, y + ty * m + dy)); ctx.lineTo(bx, by + dy) }
-                    const k = b.fuerte ? 1 : 0.45
-                    zig(0); ctx.strokeStyle = `rgba(0, 0, 0, ${0.95 * a * k})`; ctx.lineWidth = b.fuerte ? 2 : 1.1; ctx.stroke()
+            ctx.setTransform(dpr, 0, 0, dpr, 0, arriba * dpr)
+            for (const b of bordes) {
+                const ya = arriba + b.a[1]
+                if (ya < -20 || ya > vh + 20) continue // fuera de la pantalla
+                let n = 0, p0 = null, p1 = null // piezas de este borde que siguen en su lugar (sin crear listas nuevas en cada cuadro)
+                for (const pz of b.piezas) if (pz.estado === 'puesta' || pz.estado === 'suelta') { if (n++) p1 = pz; else p0 = pz }
+                if (!n) continue
+                const ax = b.a[0] + tx, ay = b.a[1] + ty, bx = b.b[0] + tx, by = b.b[1] + ty
+                if (n === 2) {
+                    if (b.d > grieta || p0.fija || p1.fija) continue // la parte de arriba (que no se cae) no se agrieta: si no, entre la escena y el derrumbe quedaba una raya
+                    const a = lim((grieta - b.d) / 60), k = b.fuerte ? 1 : 0.45
+                    ctx.beginPath(); ctx.moveTo(ax, ay); for (const [x, y] of b.zig) ctx.lineTo(x + tx, y + ty); ctx.lineTo(bx, by)
+                    ctx.strokeStyle = 'rgba(0, 0, 0, ' + (0.95 * a * k).toFixed(3) + ')'; ctx.lineWidth = b.fuerte ? 2 : 1.1; ctx.stroke()
                 } else if (b.piezas.length === 2) {
-                    const pz = puestas[0], otra = b.piezas.find(o => o !== pz)
-                    if (otra.cy > pz.cy) { // el hueco queda abajo: se ve el grosor del techo
+                    const otra = b.piezas[0] === p0 ? b.piezas[1] : b.piezas[0]
+                    if (otra.cy > p0.cy) { // el hueco queda abajo: se ve el grosor del techo
                         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.lineTo(bx, by + 8); ctx.lineTo(ax, ay + 8); ctx.closePath()
                         ctx.fillStyle = LADO; ctx.fill()
                     }
                 }
-            })
-            ctx.restore()
+            }
         }
         // pedazos cayendo (con grosor, girando)
-        piezas.forEach(pz => {
-            if (pz.estado !== 'cayendo') return
-            ctx.save(); ctx.translate(pz.cx + pz.dx, yTecho + pz.cy + pz.dy - sy); ctx.rotate(pz.ang)
-            trazar(pz.pts, 0, 7); ctx.fillStyle = LADO; ctx.fill()
-            trazar(pz.pts, 0, 0); ctx.fillStyle = color(pz.cy, pz.luz); ctx.fill()
-            ctx.restore()
-        })
-        polvo.forEach(q => {
+        for (const pz of piezas) {
+            if (pz.estado !== 'cayendo') continue
+            enPantalla(pz.cx + pz.dx, yTecho + pz.cy + pz.dy - sy, pz.ang)
+            ctx.translate(0, 7); ctx.fillStyle = LADO; ctx.fill(pz.camino); ctx.translate(0, -7)
+            ctx.fillStyle = pz.colLuz; ctx.fill(pz.camino)
+        }
+        for (const q of polvo) {
             if (q.tipo === 'piedra') {
-                ctx.save(); ctx.translate(q.x, q.y - sy); ctx.rotate(q.ang); trazar(q.pts, 0, 0); ctx.fillStyle = q.color; ctx.fill(); ctx.restore()
-            } else {
-                const a = 0.16 * (1 - q.edad / q.vida)
-                const g = ctx.createRadialGradient(q.x, q.y - sy, 0, q.x, q.y - sy, q.r)
-                g.addColorStop(0, `rgba(80, 64, 92, ${a})`); g.addColorStop(1, 'rgba(80, 64, 92, 0)')
-                ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q.x, q.y - sy, q.r, 0, Math.PI * 2); ctx.fill()
+                enPantalla(q.x, q.y - sy, q.ang); ctx.fillStyle = q.color; ctx.fill(q.camino ||= camino(q.pts))
+            } else { // nube: una imagen de polvo ya dibujada, estirada y cada vez más transparente (antes un degradado nuevo en cada cuadro)
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1 - q.edad / q.vida
+                ctx.drawImage(NUBE, q.x - q.r, q.y - sy - q.r, q.r * 2, q.r * 2); ctx.globalAlpha = 1
             }
-        })
+        }
 
         // Sigue animando mientras el techo se ve o algo cae; si no, descansa hasta el próximo scroll
-        activo = visible || cayendo || polvo.length > 0 || piezas.some(pz => pz.alfa < 1)
+        activo = visible || cayendo || polvo.length > 0 || apareciendo
         if (activo) requestAnimationFrame(cuadro)
     }
-    function trazar(pts, x, y) {
-        ctx.beginPath(); pts.forEach(([px, py], i) => i ? ctx.lineTo(px + x, py + y) : ctx.moveTo(px + x, py + y)); ctx.closePath()
-    }
+    // camino de un pedazo o una piedra (relativo a su centro), armado una sola vez
+    function camino(pts) { const c = new Path2D(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); return c }
+    // polvo: un círculo con degradado dibujado una vez (64 px) que se reutiliza para todas las nubes
+    const NUBE = (() => {
+        const c = document.createElement('canvas'); c.width = c.height = 64
+        const g = c.getContext('2d'), d = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+        d.addColorStop(0, 'rgba(80, 64, 92, 0.16)'); d.addColorStop(1, 'rgba(80, 64, 92, 0)'); g.fillStyle = d; g.fillRect(0, 0, 64, 64)
+        return c
+    })()
     const despertar = () => { if (activo) return; activo = true; anterior = performance.now(); requestAnimationFrame(cuadro) }
 
     armar(); despertar()
@@ -899,15 +902,24 @@ function iniciarDerrumbe() {
 }
 
 // 7.1 Flecha hacia abajo -----------------
-    // (index.html) Si la persona se queda quieta un rato antes de llegar al derrumbe (9 s, después de las pistas de la muestra), aparece abajo
+    // (index.html) Si la persona se queda quieta un rato antes de llegar al derrumbe (9 s), aparece abajo
     // una flecha que da un saltito y la página entera salta con ella: hay más información más abajo. Se va al hacer scroll; al tocarla baja hasta los recursos.
     // Una vez que la persona llegó hasta donde empieza el derrumbe, no vuelve a salir
+// 7.2 Header del index -----------------
+    // (index.html) Arriba no hay header (la escena ocupa la pantalla), pero cuando la escena sale de la vista vuelve el título y el menú,
+    // fijos arriba (style.css: .cabecera-ver)
+function iniciarCabecera() {
+    const escena = document.querySelector('.pagina-inicio .escena')
+    if (!escena) return
+    new IntersectionObserver(([e]) => document.body.classList.toggle('cabecera-ver', !e.isIntersecting)).observe(escena)
+}
+
 function iniciarFlecha() {
     const recursos = document.getElementById('recursos')
     if (!document.body.classList.contains('pagina-inicio') || !recursos) return
     const flecha = document.createElement('button')
     flecha.type = 'button'; flecha.className = 'flecha-abajo'; flecha.setAttribute('aria-label', 'Hay más información abajo: ir a los recursos')
-    flecha.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9 L12 16 L19 9"/></svg>'
+    flecha.innerHTML = '<span>Recursos abajo</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9 L12 16 L19 9"/></svg>'
     document.body.append(flecha)
     let espera = null, llego = false
     const espacio = () => document.querySelector('.derrumbe-espacio') // donde empieza la animación del derrumbe (sección 7)
@@ -920,7 +932,7 @@ function iniciarFlecha() {
     const programar = () => {
         flecha.classList.remove('flecha-abajo--ver'); clearTimeout(espera)
         document.body.classList.remove('pagina-salta')
-        if (falta()) espera = setTimeout(() => { if (falta()) { flecha.classList.add('flecha-abajo--ver'); document.body.classList.add('pagina-salta') } }, 9000) // 9 s: un rato después de las pistas de girar / acercar
+        if (falta()) espera = setTimeout(() => { if (falta()) { flecha.classList.add('flecha-abajo--ver'); document.body.classList.add('pagina-salta') } }, 4500) // 4.5 s quieta antes del derrumbe (antes 9: salía muy tarde)
     }
     window.addEventListener('scroll', programar, { passive: true })
     flecha.addEventListener('click', () => {
@@ -938,5 +950,6 @@ iniciarAdvertencia()
 iniciarScroll()
 iniciarDerrumbe()
 iniciarFlecha()
-iniciarMuestra()
+iniciarCabecera()
+;(window.requestIdleCallback || ((fn) => setTimeout(fn, 300)))(() => iniciarMuestra(), { timeout: 1500 }) // la muestra empieza cuando el navegador está libre (máximo 1.5 s)
 iniciarJuego()

@@ -108,6 +108,7 @@ const showCardNext = (wait) => {
     if (!onCardNext || cardReady) return
     cardTl?.kill(); cardTl = gsap.timeline({ delay: wait }).call(() => { cardReady = true; cardActions.style.visibility = ''; cardNext.focus({ preventScroll: true }) }).fromTo(cardActions, { opacity: 0 }, { opacity: 1, duration: wait ? 0.8 : 0.3 })
 }
+let skipping = false, skipIdle = 0 // skipping: se apretó Saltar en una escena; las tarjetas y frases que siguen pasan solas hasta que vuelve el juego
 const skipCard = () => { // completa el título y el texto y muestra el botón ya
     if (card.hidden || !onCardNext || !cardFilled) return
     if (cardReady) return onCardNext()
@@ -130,6 +131,13 @@ const advance = () => {
     const done = onEnd; closeTalk(); done?.()
 }
 talkNext.addEventListener('click', advance)
+// saltar todo el diálogo (doble clic en Continuar o el botón Saltar): pasa por las frases que faltan (por si alguna dispara algo) y lo cierra
+const skipTalk = () => {
+    if (talkEl.hidden) return
+    talkT.stop(); while (++li < lines.length) onLine?.(li)
+    const done = onEnd; closeTalk(); done?.()
+}
+talkNext.addEventListener('dblclick', skipTalk)
 // Clic (o toque) en cualquier parte mientras alguien habla: acelera el texto y, si ya terminó, pasa a la siguiente frase
 addEventListener('pointerdown', (e) => { if (!talkEl.hidden && e.button === 0 && e.timeStamp > talkSince && !e.target.closest('button, .gx-modal, .gx-touch')) advance() })
 addEventListener('keydown', (e) => { // se registra antes que la interacción del juego: la tecla que avanza el diálogo no interactúa con nada más
@@ -144,8 +152,19 @@ const linea = $('.gx-linea'); let lineaKey = '' // línea de tiempo de la mañan
 $('.gx-ayuda').addEventListener('click', () => helpFn?.())
 const anuncio = $('.gx-anuncio'), anuncioT = anuncio.querySelector('strong')
 const progEl = $('.gx-progreso'), progFill = $('.gx-progreso-fill'), progPct = $('.gx-progreso-pct'); let lastPct = -1
+let skipTo = null // escena larga con su propio salto (el sismo): Saltar la corta de una vez y va a donde diga main.js
+let whisperTl = null, sceneSince = 0 // whisperTl: las frases sobre negro en curso · sceneSince: desde cuándo hay un diálogo o una escena (para el botón Saltar)
 let sayTimer = null, touchHidden = null, whispering = false, topHidden = null
 const modals = [...root.querySelectorAll('.gx-modal')]
+const saltar = $('.gx-saltar')
+saltar.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (skipTo) { const f = skipTo; skipTo = null; saltar.hidden = true; sceneSince = 0; return f() } // el sismo: salta toda la escena
+    skipping = true; skipIdle = performance.now(); saltar.hidden = true; sceneSince = 0
+    if (!talkEl.hidden) skipTalk()
+    if (!card.hidden && onCardNext) onCardNext() // la tarjeta pasa ya (las siguientes pasan solas: ver fill en card)
+    if (whispering) whisperTl?.progress(1)
+})
 export const ui = {
     vignette: $('.gx-vignette'),
     say(t) { // los mensajes se van solos después de unos segundos (los de la respiración los pone updateBreath)
@@ -158,6 +177,12 @@ export const ui = {
         const top = this.blackout && !pauseOn
         if (top !== topHidden) { topHidden = top; document.body.classList.toggle('gx-tarjeta', top) }
         document.body.classList.toggle('gx-minijuego', inGame())
+        // Saltar: aparece cuando un diálogo, una tarjeta con "Continuar" o las frases sobre negro llevan un rato (2 s) en pantalla
+        const scene = !talkEl.hidden || (!card.hidden && !!onCardNext) || whispering || !!skipTo, now = performance.now()
+        if (!scene) sceneSince = 0; else if (!sceneSince) sceneSince = now
+        const showSkip = scene && !pauseOn && now - sceneSince > 2000
+        if (saltar.hidden === showSkip) saltar.hidden = !showSkip
+        if (skipping) { if (scene) skipIdle = now; else if (now - skipIdle > 600) skipping = false } // la escena terminó: el juego vuelve a la normalidad
         document.body.classList.toggle('gx-negro', gsap.getProperty(fadeEl, 'opacity') > 0.5) // pantalla en negro: la línea de tiempo no se queda flotando (se veía gris y rota antes de la tarjeta del sismo)
     },
     showBreath(v) { $('.gx-breath').hidden = !v },
@@ -254,8 +279,9 @@ export const ui = {
         gsap.to(fadeEl, { backgroundColor: '#000000', duration: 1.4, ease: 'power2.in', onComplete: cb })
     },
     whisper(lines, cb) { // frases sueltas sobre la pantalla negra, una tras otra
+        if (skipping) return void cb?.() // saltando la escena: las frases no se muestran
         whispering = true; document.body.classList.add("gx-susurro") // los botones de arriba siguen a la vista (solo se esconde la línea de tiempo)
-        const tl = gsap.timeline({ onComplete: () => { whisperEl.textContent = ''; whispering = false; document.body.classList.remove("gx-susurro"); cb?.() } })
+        const tl = whisperTl = gsap.timeline({ onComplete: () => { whisperEl.textContent = ''; whispering = false; document.body.classList.remove("gx-susurro"); cb?.() } })
         lines.forEach(l => tl.call(() => { whisperEl.textContent = l }).to(whisperEl, { opacity: 1, duration: 1.1 }).to(whisperEl, { opacity: 0, duration: 1.1 }, '+=1.4'))
     },
     // opts: { type: true → el texto se escribe letra por letra · onContinue → muestra el botón "Continuar" }
@@ -266,6 +292,7 @@ export const ui = {
         const fill = () => { // el texto completo se pone invisible desde el principio: así la tarjeta ya tiene su alto y el título no se mueve cuando el texto aparece
             cardH.textContent = title; cardText = text; cardP.innerHTML = ''; const ghost = document.createElement('span'); ghost.style.visibility = 'hidden'; ghost.textContent = text; cardP.append(ghost)
             gsap.set([cardH, cardP], { opacity: 0 }); onCardNext = opts.onContinue || null; cardFilled = true
+            if (skipping && onCardNext) gsap.delayedCall(0.05, () => { if (onCardNext === opts.onContinue) onCardNext() }) // saltando: la tarjeta pasa sola
             cardActions.hidden = !onCardNext; cardActions.style.visibility = 'hidden' // el botón ocupa su lugar desde el principio, pero aparece después
         }
         card.hidden = false
@@ -279,14 +306,23 @@ export const ui = {
                 else { cardT.write(text); gsap.fromTo(cardP, { opacity: 0 }, { opacity: 1, duration: 0.8 }); showCardNext(1.6) }
             })
     },
+    cancelSkip() { skipping = false },
+    setSkip(fn) { skipTo = fn; sceneSince = 0 }, // una escena larga (el sismo) se puede saltar entera: fn decide a dónde va
+    // corta la escena que esté en pantalla (tarjeta y frases sobre negro) sin fundidos: lo usa el salto del sismo
+    cortarEscena() {
+        cardT.stop(); cardTl?.kill(); gsap.killTweensOf([card, cardH, cardP, cardActions]); onCardNext = null; cardReady = false; card.hidden = true
+        whisperTl?.kill(); whisperTl = null; whisperEl.textContent = ''; gsap.set(whisperEl, { opacity: 0 }); whispering = false; document.body.classList.remove('gx-susurro')
+        skipping = false
+    }, // empieza algo que no es escena (por ejemplo comer): lo que viene después no se salta solo
     get blackout() { return !card.hidden }, // tarjeta de narrativa: los botones de arriba se esconden (en las frases sobre negro, como "Todo se movió", siguen)
     hud(v) { document.body.classList.toggle("gx-sin-hud", !v) }, // al principio: los botones de arriba y la línea de tiempo salen solo después del pop-up de controles
     controls(onClose) { openHold($('.gx-controls'), onClose) }, // pop-up de controles del inicio
-    tutorial(info, onClose) { // pop-up "Cómo se juega". info: { sub, steps: [], page → enlace a la página que explica la técnica }
+    tutorial(info, onClose) { // pop-up "Cómo se juega". info: { sub, steps: [{ img, txt }] (tres dibujos con su frase), page → enlace a la página que explica la técnica }
         const m = $('.gx-tutorial'), list = m.querySelector('.gx-list'), more = m.querySelector('.gx-more')
         m.querySelector('.gx-sub').textContent = info.sub
         more.hidden = !info.page; if (info.page) more.href = info.page
-        list.innerHTML = ''; info.steps.forEach(s => { const el = document.createElement('li'); el.textContent = s; list.appendChild(el) })
+        list.classList.add('gx-pasos')
+        list.innerHTML = info.steps.map((s, i) => `<li><span class="gx-paso-img">${s.img}</span><span class="gx-paso-txt"><b>${i + 1}</b> ${s.txt}</span></li>`).join('')
         openHold(m, onClose)
     },
     // diálogo con un personaje. opts: { onLine(i) → al mostrar cada frase · onEnd → al cerrar }

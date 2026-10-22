@@ -205,6 +205,30 @@ function metaDe(meta, nombre, t, k, r = 0) { // k: 0 → 1 (al caminar, cuánto 
         meta.dedosD.z = 0.1 + 1.45 * cierra; meta.pulgarD.y = -0.2 - 0.6 * cierra             // abre la mano y la cierra sobre el objeto
         meta.espalda.x = 0.32 * estira + 0.05 * trae; meta.cabeza.x = 0.22 * estira + 0.25 * trae; meta.espalda.y = -0.12 * estira
         meta.musloI.x = meta.musloD.x = -0.22 * estira; meta.piernaI.x = meta.piernaD.x = 0.4 * estira // dobla un poco las rodillas
+    } else if (nombre === 'tambaleo') {
+        // k: -1 → 1 hacia dónde se está cayendo (positivo: hacia su lado I). Perdiendo el equilibrio, como en la referencia: la cadera se
+        // va hacia ese lado, la pierna del otro lado se levanta y se abre, el brazo de arriba (el del otro lado) sube por encima de la cabeza y
+        // el de abajo se abre hacia afuera; los dos manotean buscando el equilibrio. Cerca de 0 casi no se mueve (ya está derecha)
+        const L = Math.max(-1, Math.min(1, k)), a = Math.abs(L), s = Math.sign(L) || 1
+        const manoteo = (f, fase) => Math.sin(t * f + fase) * (0.15 + 0.35 * a)
+        meta.cadera.z = -0.3 * L; meta.espalda.z = -0.12 * L + 0.04 * Math.sin(t * 5)
+        meta.cabeza.z = 0.22 * L; meta.cabeza.x = 0.08 * a                                  // la cabeza busca quedar derecha
+        // piernas: la del lado de la caída sostiene (el pie queda debajo); la otra se levanta un poco y se abre
+        const apoyo = s > 0 ? 'I' : 'D', libre = s > 0 ? 'D' : 'I', lado = (l) => l === 'I' ? 1 : -1
+        meta['muslo' + apoyo].z = 0.3 * L; meta['muslo' + apoyo].x = -0.1 * a; meta['pierna' + apoyo].x = 0.2 * a
+        meta['muslo' + libre].z = lado(libre) * 0.45 * a; meta['muslo' + libre].x = -0.45 * a; meta['pierna' + libre].x = 0.6 * a
+        meta['pie' + apoyo].x = -0.1 * a; meta['pie' + libre].x = 0.25 * a
+        // brazos: el de arriba (lado libre) sube por encima de la cabeza; el de abajo (lado de la caída) se abre hacia afuera
+        const arriba = libre, abajo = apoyo, z = (l, v) => lado(l) > 0 ? -v : v // en el lado D el giro va al revés
+        meta['brazo' + arriba].z = z(arriba, BRAZO_ABAJO - (BRAZO_ABAJO + 1.15) * a); meta['brazo' + arriba].x = manoteo(6, 0)
+        meta['brazo' + abajo].z = z(abajo, BRAZO_ABAJO - (BRAZO_ABAJO - 0.2) * a); meta['brazo' + abajo].x = manoteo(5, 1.7) - 0.2 * a
+        meta['antebrazo' + arriba].y = -lado(arriba) * (0.25 + 0.5 * a * (0.5 + 0.5 * Math.sin(t * 7))) // los codos se doblan y estiran
+        meta['antebrazo' + abajo].y = -lado(abajo) * (0.2 + 0.4 * a * (0.5 + 0.5 * Math.sin(t * 6 + 1)))
+        mano(meta, 0.1)                                                                         // manos abiertas
+    } else if (nombre === 'comerSentada') { // sentada a la mesa: las piernas de "sentada" con los brazos y la cabeza de "comer"
+        metaDe(meta, 'sentada', t, k)
+        const piernas = ['cadera', 'musloI', 'musloD', 'piernaI', 'piernaD', 'pieI', 'pieD', 'puntaI', 'puntaD'].map(n => [n, meta[n].clone()])
+        metaDe(meta, 'comer', t, k); piernas.forEach(([n, v]) => meta[n].copy(v))
     } else if (nombre === 'comer') {
         // sentada o de pie frente a la mesa: la mano derecha lleva la comida a la boca una y otra vez (cada 1.8 s) y mastica;
         // la izquierda descansa al frente. Sencilla: lo más probable es que se vea de espaldas
@@ -222,7 +246,7 @@ function metaDe(meta, nombre, t, k, r = 0) { // k: 0 → 1 (al caminar, cuánto 
 // Idle contento (la muestra del index), como un idle alegre de anime: rebota suave doblando las rodillas, con el peso en una pierna y la
 // otra suelta (rodilla adelante y un poco hacia adentro, el talón levantado que sube y baja, apoyada en la punta). Los pies no se
 // despegan del piso: el tobillo compensa lo que se doblan la rodilla y el muslo. Los puños sueltos cerca del mentón, los codos abajo y
-// pegados, rebotando con el cuerpo; cada tanto levanta un puño, mira alrededor o pasa el peso a la otra pierna
+// pegados, rebotando con el cuerpo; cada tanto mira alrededor o pasa el peso a la otra pierna
 const PIERNA = 20 // largo del muslo y de la pierna (unidades del archivo)
 function posarFeliz(meta, t) {
     const w = paso(-0.25, 0.25, Math.sin(t * 0.35)) * 2 - 1        // 1: peso en la pierna I · -1: en la D (cambia cada ~9 s)
@@ -248,12 +272,9 @@ function posarFeliz(meta, t) {
     meta.antebrazoI.y = -2.3; meta.antebrazoD.y = 2.3
     meta.manoI.z = -0.35; meta.manoD.z = 0.35; meta.manoI.x = meta.manoD.x = -0.2
     mano(meta, 1.5)                                                  // puños cerrados
-    // cada 7 s levanta un puño, contenta (como cuando celebra)
-    const g = t % 7, festeja = Math.max(0, Math.min(1, (g - 4.5) / 0.25, (5.6 - g) / 0.25))
-    meta.brazoD.x -= 0.55 * festeja; meta.antebrazoD.y += 0.25 * festeja; meta.cabeza.z = -0.12 * festeja
     // cabeza: ladeada siguiendo el rebote, y mira alrededor de vez en cuando
     const mira = paso(-0.2, 0.2, Math.sin(t * 0.23 + 1)) * 2 - 1
-    meta.cabeza.y = 0.3 * mira; meta.cabeza.z += 0.08 * Math.sin(t * 2.6 - 0.5) - 0.04 * w; meta.cabeza.x = -0.06 + 0.04 * rebote + 0.015 * resp
+    meta.cabeza.y = 0.3 * mira; meta.cabeza.z = 0.08 * Math.sin(t * 2.6 - 0.5) - 0.04 * w; meta.cabeza.x = -0.06 + 0.04 * rebote + 0.015 * resp
     return alturaFeliz(t)
 }
 // cuánto baja el cuerpo al doblar la rodilla de apoyo (en unidades del juego para alto 1.8): así los pies no se meten en el piso

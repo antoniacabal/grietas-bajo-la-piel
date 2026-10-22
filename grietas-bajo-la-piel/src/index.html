@@ -67,7 +67,7 @@
             <!-- Sección del juego -->
             <section class="escena">
                 <div class="escena-contenido">
-                    <h1 class="titulo-principal titulo-marca titulo-marca--apilado"><span class="titulo-grietas">Grietas</span> <span class="titulo-resto"><span>bajo</span> <span>la piel</span></span></h1>
+                    <h1 class="titulo-principal titulo-marca titulo-marca--apilado"><span class="titulo-grietas">Grietas</span> <span class="titulo-resto">bajo la piel</span></h1>
                     <p class="escena-parrafo">
                         La ciudad parece haber vuelto a la normalidad. Gabriela también intenta hacerlo.
                     </p>
@@ -83,25 +83,9 @@
                     <button type="button" class="boton" id="boton-iniciar" aria-haspopup="dialog">Iniciar</button>
                 </div>
                 <div class="escena-canvas">
-                    <canvas class="webgl" aria-label="Muestra del juego: arrastra para girarla y usa la rueda del mouse o pellizca para acercarla"></canvas>
-
-                    <!-- Pistas de los controles (script.js las muestra después de un rato y las retira cuando se usan) -->
-                    <div class="muestra-pistas" aria-hidden="true">
-                        <svg class="muestra-pista muestra-pista--giro muestra-pista--izquierda" viewBox="0 0 80 120">
-                            <path d="M58 16 A 44 44 0 0 0 58 104" /> <!-- medio círculo por la izquierda -->
-                            <path d="M46 93 L 58 104 L 46 115" /> <!-- punta alineada con el final de la curva -->
-                        </svg>
-                        <svg class="muestra-pista muestra-pista--giro muestra-pista--derecha" viewBox="0 0 80 120">
-                            <path d="M22 16 A 44 44 0 0 1 22 104" />
-                            <path d="M34 93 L 22 104 L 34 115" />
-                        </svg>
-                        <p class="muestra-pista muestra-pista--giro muestra-pista-texto muestra-pista-texto--giro">Arrastra para girar</p>
-                        <p class="muestra-pista muestra-pista--zoom muestra-pista-texto muestra-pista-texto--zoom">
-                            <svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5" /><path d="M15 15 L 21 21 M10 7 V 13 M7 10 H 13" /></svg>
-                            <span class="muestra-zoom-mouse">Rueda del mouse para acercar</span>
-                            <span class="muestra-zoom-tactil">Pellizca para acercar</span>
-                        </p>
-                    </div>
+                    <!-- imagen de la muestra: se ve mientras carga el 3D y se queda si el equipo no tiene WebGL (script.js 3) -->
+                    <img class="muestra-respaldo" src="./media/muestra.webp" alt="" aria-hidden="true" decoding="async">
+                    <canvas class="webgl" aria-label="Muestra del juego: el cuarto de Gabriela, girando"></canvas>
                 </div>
             </section>
 

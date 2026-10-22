@@ -7,7 +7,8 @@ export const CONFIG = {
     anxiety: { failPenalty: 0.12, shakeMax: 0.12, blurMax: 3, satMin: 0.5, postQuakeSat: 0.85, vignetteMax: 0.85, distort: 1 }, // distort: cuánto se deforma la ciudad con la ansiedad (0 = nada)
     camera: { azimuth: 45, elevation: 35.264, distance: 24, zoom: 1, view: 12, x: -4, y: 1, z: 0, follow: 3, lead: 3 }, // follow: suavidad · lead: cuánto mira por delante del personaje en la calle
     env: { light: 1, successGain: 0.15 },
-    cats: { timeout: 12 }, // categorías mentales rápidas: segundos para encontrar las 6 (equivocarse no quita tiempo)
+    gravedad: { timeout: 22 }, foco: { timeout: 22 }, // (antes 30 y 35: se hacían largos) reconstruir la gravedad y foco entre el ruido: segundos para lograrlo
+    conteo: { timeout: 15 }, // (antes 25: muy largo) conteo de grounding: segundos para los 5 aciertos (equivocarse no quita tiempo)
     earth: { need: 7, timeout: 15, drain: 1.2, relief: 0.1 }, npcs: { street: 50, bus: 3 }, // earthing: s sobre el pasto · tiempo límite real · cuánto se pierde por s fuera del pasto · NPCs
     player: { speed: 3.5, anxSpeed: 0.6, startX: -1.6, startZ: 0, reach: 1.8, screenRelative: false }, // screenRelative false: el teclado sigue las calles del mapa (W = arriba-derecha, D = abajo-derecha, S = abajo-izquierda, A = arriba-izquierda)
     bus: { calmRide: 7, time: 120, goal: [6, 7], traumaMin: 4, traumaMax: 6, crisisMin: 3, crisisMax: 5, closed: 1.5, stayAnxiety: 0.25, startAnxiety: 0.4, baseline: 0.25, drift: 0.014, driftMax: 0.7 }, // viaje en el MIO: mucha más ansiedad · trauma = a los cuántos s llega el frenón · time = segundos de viaje para llegar a la universidad (después del sismo) · closed = crisis más seguidas por ser un espacio cerrado donde viviste el sismo · stayAnxiety = lo que sube la ansiedad si no te bajas en un Earthing

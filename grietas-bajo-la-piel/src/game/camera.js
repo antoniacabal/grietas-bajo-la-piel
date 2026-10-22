@@ -21,6 +21,8 @@ export function updateCamera(t, dt, desiredX, desiredZ = 0) {
     target.set(c.x + (Math.sin(t * 41) + Math.sin(t * 23)) * s, c.y + Math.sin(t * 37) * s, c.z + Math.cos(t * 29) * s)
     camera.position.set(target.x + c.distance * Math.cos(el) * Math.sin(az), target.y + c.distance * Math.sin(el), target.z + c.distance * Math.cos(el) * Math.cos(az))
     camera.lookAt(target)
+    // crisis de disociación (conteo.js): la cámara se ladea (ángulo holandés) y se bambolea de lado a lado
+    if (runtime.dutch) { camera.rotateZ(runtime.dutch); camera.rotateY((runtime.dutchSway || 0) * 0.015) }
     const z = zoomNow(); if (camera.zoom !== z) { camera.zoom = z; camera.updateProjectionMatrix() }
 }
 addEventListener('resize', resizeCamera); resizeCamera()

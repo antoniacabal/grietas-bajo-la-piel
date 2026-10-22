@@ -32,5 +32,7 @@ const earth = {
 }
 
 // 2. Exportación
-import { cats } from './cats.js' // categorías mentales rápidas (pop-up tipo captcha)
-export const GAMES = { earth, cats }
+import { conteo } from './conteo.js'     // conteo de grounding (en la casa, después del sismo)
+import { gravedad } from './gravedad.js' // reconstruir la gravedad (enderezar el marco contra el mareo)
+import { foco } from './foco.js'         // foco entre el ruido (sintonizar el sonido seguro)
+export const GAMES = { earth, conteo, gravedad, foco }

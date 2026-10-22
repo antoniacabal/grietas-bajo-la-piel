@@ -10,7 +10,8 @@ import * as THREE from 'three'
 import { crearPersonaje, saltoSusto, SALTO } from './personaje.js'
 import { scene } from './scene.js'
 import { CONFIG, runtime } from './config.js'
-import { walkable, pullBack, endless, BED_LIE, SEAT_Y, bagModel } from './environment.js'
+import { walkable, pullBack, endless, BED_LIE, SEAT_Y, bagModel, sueloCalle } from './environment.js'
+let seatY = SEAT_Y, enMesa = false, conMaleta = false // altura del asiento (bancas del MIO o silla del comedor) · sentada a la mesa · lleva la maleta
 
 // 1. Modelo del personaje: assets/protagonista/Personaje.fbx (y Personaje_Oscuro.fbx para el nivel 3 de ansiedad), con el
 //    esqueleto y las poses de personaje.js
@@ -78,7 +79,7 @@ let lying = false, sitting = false, seatLocked = false // seatLocked: antes del 
 export const player = {
     group,
     setMode(m) { mode = m },
-    setBackpack(v) { backpack.visible = v }, // maleta a la espalda
+    setBackpack(v) { conMaleta = v; backpack.visible = v }, // maleta a la espalda
     cargarModelo() { return prota.cargar('normal') }, // devuelve una promesa (main.js espera el modelo antes de la tarjeta "10 de agosto")
     // gesto de coger algo en (x, z): se voltea hacia el objeto, estira la mano y lo recoge. alMedio: cuando la mano llega · alFinal: al terminar
     coger(x, z, alMedio, alFinal) {
@@ -102,8 +103,8 @@ export const player = {
     // Orden ZYX: primero se acuesta boca arriba (giro en x) y después rueda sobre su costado (giro en z)
     lieDown() { lying = true; sitting = false; group.rotation.set(-Math.PI / 2, 0, -Math.PI / 2, 'ZYX'); group.position.set(LIE.x, LIE.y, LIE.z) },
     // sentada: un poco hacia el frente del cojín, para que las rodillas pasen el borde y las piernas no se metan en la silla
-    sit(s, lock = false) { sitting = true; seatLocked = lock; group.rotation.set(0, s.face, 0, 'XYZ'); group.position.set(s.x + Math.sin(s.face) * 0.1, SEAT_Y, s.z + Math.cos(s.face) * 0.1) },
-    unsit() { if (!sitting) return; sitting = false; seatLocked = false; group.position.set(group.position.x, 0, 0.25) }, // queda de pie en el pasillo, frente al asiento
+    sit(s, lock = false) { sitting = true; seatLocked = lock; seatY = s.y ?? SEAT_Y; enMesa = !!s.mesa; group.rotation.set(0, s.face, 0, 'XYZ'); const ad = s.adelante ?? 0.1; group.position.set(s.x + Math.sin(s.face) * ad, seatY, s.z + Math.cos(s.face) * ad) },
+    unsit(a) { if (!sitting) return; sitting = false; seatLocked = false; a ? group.position.set(a.x, 0, a.z) : group.position.set(group.position.x, 0, 0.25) }, // queda de pie donde se diga (o en el pasillo del MIO, frente al asiento)
     get seatLocked() { return seatLocked },
     get sitting() { return sitting },
     standUp(x, z) { lying = false; group.rotation.set(0, 0, 0, 'XYZ'); group.position.set(x, 0, z) },
@@ -156,9 +157,14 @@ export const player = {
             prota.pose('sobresalto', t, p)
             if (p >= 1) { salto = null; trasSalto = 0.7 }
         } else if (trasSalto > 0) { trasSalto -= dt; prota.pose('quieta', t) } // la pausa: quieta, todavía mirando lo que la asustó
+        else if (runtime.tambaleo !== undefined && !lying && !sitting) { // Reconstruir la gravedad (gravedad.js): de frente a la cámara, tambaleándose hacia donde se cae
+            group.rotation.y = THREE.MathUtils.degToRad(CONFIG.camera.azimuth); group.rotation.z = -runtime.tambaleo * 0.15
+            prota.pose('tambaleo', t, runtime.tambaleo)
+        }
         else if (gesto) prota.pose('coger', t, gesto.t / gesto.dur)
-        else if (comiendo) prota.pose('comer', t)
+        else if (comiendo) prota.pose(sitting ? 'comerSentada' : 'comer', t) // en la mesa come sentada
         else prota.pose(lying ? 'acostada' : sitting ? 'sentada' : andar > 0.05 ? 'caminar' : susto > 0.05 ? 'miedo' : 'quieta', andar > 0.05 ? fase : t, andar > 0.05 ? andar : susto, correr)
+        if (runtime.tambaleo === undefined && !lying && group.rotation.z !== 0) group.rotation.z = 0 // terminó el tambaleo: vuelve a quedar derecha
         prota.aplicar(dt, salto ? 22 : 10) // el salto es rápido: los huesos siguen la pose sin retraso
         const oscuro = (runtime.levelVis ?? -1) > 2.75 // nivel 3 de ansiedad: la versión oscura del modelo (como el resto de los modelos)
         if ((runtime.levelVis ?? -1) > 2) prota.cargar('oscuro') // se prepara un poco antes de necesitarla
@@ -171,11 +177,12 @@ export const player = {
         else if (mode === 'calm') s = 1 + Math.sin(t * 1.5) * 0.015
         group.scale.setScalar(s)
         if (lying) group.position.set(LIE.x - 0.05, LIE.y + 0.2 + Math.sin(t * 1.5) * 0.008, LIE.z) // (+0.2: de lado, el hombro queda sobre el colchón, no metido en él)
-        else if (sitting) group.position.y = SEAT_Y - 0.46 // la cadera queda sobre el cojín (las piernas, dobladas hacia el frente)
+        else if (sitting) group.position.y = seatY - 0.46 // la cadera queda sobre el cojín (las piernas, dobladas hacia el frente)
         // de pie, caminando, con miedo o saltando: el cuerpo se apoya en la suela más baja de la pose de este cuadro (prota.piso). Antes era una
         // fórmula fija del paso (alturaPaso) y al caminar los zapatos se metían hasta 4 cm en el piso. En el salto se suma el arco del aire
-        else group.position.y = (PISO[runtime.space] ?? 0) + 0.002 - prota.piso() + Math.max(0, salto?.y ?? 0)
+        else group.position.y = (runtime.space === 'STREET' ? sueloCalle(group.position.x, group.position.z) : PISO[runtime.space] ?? 0) + 0.002 - prota.piso() + Math.max(0, salto?.y ?? 0)
         // sentada, la maleta va sobre las piernas (en la espalda atravesaba el espaldar de la silla)
         backpack.position.set(0, sitting ? -0.14 : 0, sitting ? 0.66 : 0); correas.forEach(c => { c.visible = !sitting })
+        backpack.visible = conMaleta && !(sitting && enMesa) // sentada a la mesa no tiene la maleta en las piernas (en el MIO sí)
     }
 }

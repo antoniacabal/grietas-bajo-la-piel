@@ -89,7 +89,7 @@ const RECTS = {
     HOUSE: [[-8.4, -0.15, -3.05, 3.05], [-5.7, -4.3, 2.9, 3.7]],                 // cuarto + hueco de la puerta (pared invisible del frente)
     HOME: [[HX - 6.4, HX + 6.2, -3.9, 3.9], [HX + 6.0, HX + 6.9, -0.85, 0.85]],  // planta baja + puerta principal (pared invisible de la derecha)
     STREET: [...ROADS, EXT, PATH],                                                // los cuatro tramos + calle eterna + caminito de la casa
-    BUS: [[W.busInteriorX - 5.6, W.busInteriorX + 5.4, -1.4, 1.9]] // pasillo del modelo del MIO (hasta las puertas del lado de la cámara)
+    BUS: [[W.busInteriorX - 5.2, W.busInteriorX + 5.0, -1.35, 1.2]] // pasillo del modelo del MIO, por dentro de las paredes (las puertas se suman abajo, con BUS_DOORS)
 }
 // Punto del eje a una distancia d desde la valla, y el tramo más cercano a un punto (la cámara mira hacia donde avanza la calle)
 export function routePoint(d) {
@@ -144,19 +144,24 @@ GRASS.forEach(({ r: [x0, x1, z0, z1], far, axis }) => {
         if (!underStub && SECTIONS.every(o => { const [ox, oz] = secCenter(o.r); return Math.hypot(ox - cx, oz - cz) >= SEC_MIN })) SECTIONS.push({ r, far })
     }
 })
-let grassWalk = false
+// (el pasto del andén, GRASS_STRIPS, siempre se puede pisar; antes solo durante el Earthing)
 const inRect = ([x0, x1, z0, z1], x, z) => x >= x0 && x <= x1 && z >= z0 && z <= z1
 const grow = ([x0, x1, z0, z1], p) => [x0 - p, x1 + p, z0 - p, z1 + p]
 // npc = true: los peatones no pisan el caminito de la casa ni el andén. Antes un empujón los metía en el caminito,
 // ahí no podían avanzar y daban la vuelta en cada cuadro (se veían titilar sobre el andén)
 export const walkableIn = (sp, x, z, npc = false) => { // se puede preguntar por cualquier espacio (los NPCs lo usan)
-    return (RECTS[sp].some(r => inRect(r, x, z) && !(npc && r === PATH)) || (!npc && grassWalk && sp === 'STREET' && GRASS_STRIPS.some(r => inRect(r, x, z)))) &&
+    return (RECTS[sp].some(r => inRect(r, x, z) && !(npc && r === PATH)) || (!npc && sp === 'STREET' && GRASS_STRIPS.some(r => inRect(r, x, z)))) &&
         !SOLIDS.some(s => s.space === sp && (!s.active || s.active()) && Math.abs(x - s.x) < s.hw && Math.abs(z - s.z) < s.hd)
 }
 export const walkable = (x, z) => walkableIn(runtime.space, x, z)
+// altura del suelo de la calle donde pisa Gabriela (medida en la escena): la calzada queda a 5 cm y el andén, el pasto y los lotes a 3 cm.
+// Antes se apoyaba en 0 y los zapatos se metían unos centímetros en el piso
+export const sueloCalle = (x, z) => ROADS.some(r => inRect(r, x, z)) ? 0.05 : 0.03
 // pisando uno de los pedazos de pasto del andén (con un margen pequeño: pararse en el borde ya cuenta)
 const GRASS_EDGE = 0.3
-export const onGrass = (x, z) => runtime.space === 'STREET' && SECTIONS.some(p => inRect(grow(p.r, GRASS_EDGE), x, z)) &&
+// (también los pedazos de pasto al final de las calles cerradas: se ven igual y antes no contaban para el Earthing)
+let pastos = null; const PASTOS = () => pastos ||= SECTIONS.concat(STUB_PLANTERS.map(r => ({ r, far: true })))
+export const onGrass = (x, z) => runtime.space === 'STREET' && PASTOS().some(p => inRect(grow(p.r, GRASS_EDGE), x, z)) &&
     !ROADS.some(r => inRect(grow(r, -GRASS_EDGE), x, z)) && !inRect(PATH, x, z)
 const nearestIn = (rects, x, z) => {
     let best = null, bd = Infinity
@@ -165,15 +170,15 @@ const nearestIn = (rects, x, z) => {
 }
 const clear = (x, z, tx, tz) => { for (let i = 1; i <= 12; i++) { const k = i / 12; if (!walkable(x + (tx - x) * k, z + (tz - z) * k)) return false } return true } // camino recto sin obstáculos (p. ej. el MIO)
 export const nearestGrass = (x, z) => { // el pedazo de pasto alcanzable más cercano, prefiriendo el lado lejano a la cámara (en el cercano lo tapan casas y árboles)
-    const opts = SECTIONS.map(g => { const p = nearestIn([grow(g.r, -0.6)], x, z); return { ...p, cost: Math.hypot(p.x - x, p.z - z) + (g.far ? 0 : 4) } }).sort((a, b) => a.cost - b.cost)
+    const opts = PASTOS().map(g => { const p = nearestIn([grow(g.r, -0.6)], x, z); return { ...p, cost: Math.hypot(p.x - x, p.z - z) + (g.far ? 0 : 4) } }).sort((a, b) => a.cost - b.cost)
     const p = opts.find(o => clear(x, z, o.x, o.z)) || opts[0]; return [p.x, p.z]
 }
 export const pullBack = (x, z) => {
-    const sp = runtime.space, rects = RECTS[sp].concat(grassWalk && sp === 'STREET' ? GRASS_STRIPS : [])
+    const sp = runtime.space, rects = RECTS[sp].concat(sp === 'STREET' ? GRASS_STRIPS : [])
     if (rects.some(r => inRect(r, x, z))) return null
     return nearestIn(rects, x, z)
 }
-export function setGrass(v) { grassWalk = v; runtime.grassGreen = v } // Earthing: todo el pasto se satura de verde y se puede caminar por el andén
+export function setGrass(v) { runtime.grassGreen = v } // Earthing: todo el pasto se satura de verde (el pasto del andén ahora siempre se puede pisar)
 
 // Modelos finales (FBX): cada uno tiene su versión oscura, que reemplaza a la normal cuando la ansiedad llega a lo más alto (ver updateEnvironment)
 // Paleta: los colores que traen los archivos de Blender no se usan tal cual. Cada material (por su nombre) toma un color de la paleta
@@ -247,6 +252,7 @@ const tree = (x, z) => {
     const t = new THREE.Group(), trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 1; t.add(trunk)
     ;[[0, 2.7, 0, 1.2], [0.8, 2.3, 0.2, 0.85], [-0.7, 2.4, -0.3, 0.9]].forEach(([bx, by, bz, r]) => { const b = new THREE.Mesh(blobGeo, blossomMat); b.position.set(bx, by, bz); b.scale.setScalar(r); t.add(b) })
     t.position.set(x, -0.15, z); t.scale.setScalar(rr(0.9, 1.3)); t.rotation.y = rr(0, 6); cur.add(t)
+    solid(0.35, 0.35, x, z) // el tronco: no se puede atravesar (antes Gabriela pasaba por dentro del árbol)
 }
 
 // 5. Deformación de la ciudad y pasto: la ciudad se deforma con la ansiedad; el pasto se pinta de verde en el Earthing
@@ -317,7 +323,8 @@ export const DOORS = {
     subir: raw(S0, 930, 1038, -480, -247),             // flecha de la sala que apunta hacia adentro: por ahí llegas del cuarto (y vuelves a subir)
     calle: raw(S0, 751, 984, 391 + SALA_EXTRA, 509 + SALA_EXTRA) // flecha del frente, que apunta hacia afuera: la entrada de la casa (sale a la calle)
 }
-export const SPAWN = { cuarto: { x: R0.x - 0.3, z: 1.35 }, subir: { x: S0.x + 880 * SH, z: -2.3 }, calle: { x: S0.x + 860 * SH, z: 2.42 + SALA_EXTRA * SH } } // siempre fuera de los muebles y de la flecha
+// cuarto: al volver de la sala aparece sobre la flecha de salida (por donde se entra), no en medio del cuarto
+export const SPAWN = { cuarto: { x: R0.x + 236 * SH, z: 281 * SH }, subir: { x: S0.x + 880 * SH, z: -2.3 }, calle: { x: S0.x + 860 * SH, z: 2.42 + SALA_EXTRA * SH } } // siempre fuera de los muebles y de la flecha
 export const SPACE_ZOOM = { HOUSE: 1.45, HOME: 0.89 }   // el cuarto es pequeño: la cámara se acerca · la sala es ancha: se aleja un poco para que no se corte
 export const BED_LIE = { x: R0.x + 242 * SH, y: 1.05, z: -0.3 }  // acostada sobre el colchón, con la cabeza en las almohadas (hacia -z)
 
@@ -332,22 +339,26 @@ model('assets/casa/cuarto/Cuarto.fbx', 'assets/casa/cuarto/Cuarto_Oscuro.fbx', c
     }
 })
 ;[[-371, -224, 47, 252], [-371, -205, -327, 39], [-201, -38, -269, -109], [122, 362, -325, 100]].forEach(r => rawSolid(R0, r)) // armario · escritorio · silla · cama
-solid(1.6, 0.3, R0.x - 0.2, -1.85) // frente a la ventana: el alféizar sale de la pared a la altura de la cara y le atravesaba la cabeza al pegarse a ella
+solid(1.4, 0, R0.x - 0.2, -1.9) // frente a la ventana: el alféizar sale de la pared a la altura de la cara y le atravesaba la cabeza al pegarse a ella (margen justo: no más de lo necesario)
 const phone = outlined(box(0.3, 0.05, 0.5, R0.x - 290 * SH, 1.02, -0.25, '#A6869B', '#E4FFFF'), 0.3, 0.05, 0.5) // celular sobre el escritorio (el modelo no lo trae)
 
 // 8. Planta baja: cocina al fondo, comedor a la izquierda, sala con sofá y televisor a la derecha
 into('HOME')
-model('assets/casa/sala/Sala.fbx', 'assets/casa/sala/Sala_Oscura.fbx', cur, SH, S0.x, S0.y, S0.z, { onLoad: (o) => alargarSala(o) })
+const TELE = mat('#482642', '#201826', { flatShading: false }) // el televisor, morado oscuro como las llantas del MIO
+model('assets/casa/sala/Sala.fbx', 'assets/casa/sala/Sala_Oscura.fbx', cur, SH, S0.x, S0.y, S0.z, { onLoad: (o) => { alargarSala(o); o.traverse(c => { if (c.isMesh && c.name === 'Tele') c.material = Array.isArray(c.material) ? c.material.map(() => TELE) : TELE }) } })
 ;[[-763, -296, -512, -361], [-294, -74, -514, -355], [-71, 159, -512, -352],     // mesones y nevera
   [-446, -95, -92, 289],                                                           // sillas del comedor (por atrás pegado a los espaldares: si no, el paso entre la mesa y la cocina quedaba muy angosto)
-  [275, 522, -127, 298], [550, 699, -204, -60], [806, 911, -144, 282]             // sofá · banquito · mueble del televisor
+  [550, 699, -204, -60], [806, 911, -144, 282]                                      // banquito · mueble del televisor
 ].forEach(r => rawSolid(S0, r))
+{ const [x0, x1, z0, z1] = raw(S0, 275, 522, -127, 298); solid(x1 - x0 + 0.1, z1 - z0 + 0.1, (x0 + x1) / 2, (z0 + z1) / 2) } // sofá: un poco más de margen que los demás muebles (Gabriela se metía en él)
 export const TABLE = raw(S0, -507, -33, -14, 178) // mesa del comedor: el desayuno se come estando cerca de cualquier borde
 // la mesa con un margen de 0.12 m (solid suma PAD = 0.3; por eso se le restan 0.36 al ancho y al fondo)
 // (con más margen no se podía pasar entre la punta de la mesa y el sofá)
 solid(TABLE[1] - TABLE[0] - 0.36, TABLE[3] - TABLE[2] - 0.36, (TABLE[0] + TABLE[1]) / 2, (TABLE[2] + TABLE[3]) / 2)
 export const MOM_SPOT = { x: HX - 2.0, z: -1.8 }   // mamá, en la cocina (frente a la nevera; un poco hacia ella para dejar el paso detrás de las sillas del comedor)
-const breakfast = new THREE.Group(); breakfast.position.set(TABLE[1] - 0.55, 0.96, (TABLE[2] + TABLE[3]) / 2); cur.add(breakfast) // desayuno en la punta de la mesa (mamá te lo da)
+// silla del comedor donde Gabriela se sienta a comer (la de atrás a la derecha: mira hacia la mesa y hacia la cámara). y: altura del asiento (medida en el modelo)
+export const DINING_SEAT = { x: S0.x - 0.945, z: -0.265, face: 0, y: 0.775, mesa: true }
+const breakfast = new THREE.Group(); breakfast.position.set(DINING_SEAT.x, 0.96, TABLE[2] + 0.4); cur.add(breakfast) // desayuno en la mesa, frente a esa silla
 {
     const add = (geo, c, t, x, y, z) => { const m = new THREE.Mesh(geo, mat(c, t)); m.position.set(x, y, z); breakfast.add(m) }
     add(new THREE.CylinderGeometry(0.32, 0.28, 0.04, 16), '#E4FFFF', '#71708A', 0, 0.02, 0)       // plato
@@ -357,6 +368,8 @@ const breakfast = new THREE.Group(); breakfast.position.set(TABLE[1] - 0.55, 0.9
     const o = new THREE.Group(); o.visible = false; breakfast.add(o); breakfast.userData.outline = o // brilla solo cuando toca comer (main.js lo enciende)
     ;[[0.42, 0.38, 0.18, 0, 0.05, 0], [0.17, 0.15, 0.32, 0.05, 0.11, 0.42]].forEach(([rt, rb, h, x, y, z]) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 16), OUTLINE); m.position.set(x, y, z); o.add(m) })
 }
+// ventanas de la sala: el marco y el alféizar salen de la pared, y Gabriela se metía en ellas (la del fondo, entre las cortinas, y la de la pared izquierda)
+solid(3.3, 0.3, S0.x + 3.43, -3.0); solid(0.3, 1.5, S0.x - 4.62, 0.85)
 solid(0.4, 0.4, MOM_SPOT.x, MOM_SPOT.z)                              // mamá (el modelo vive en npcs.js): solo su cuerpo, para no cerrar el paso entre la mesa y la cocina
 RECTS.HOUSE = [raw(R0, -350, 360, -310, 325)]; RECTS.HOME = [raw(S0, -740, 1030, -490, 505 + SALA_EXTRA)] // piso caminable (adentro de las paredes)
 
@@ -446,16 +459,20 @@ const stubPlanterMesh = scatter(new THREE.BoxGeometry(1, 0.07, 1), '#799180', '#
 
 // Casas y edificios: cada uno es un grupo con su base en el origen y la puerta en su +z local (rotY la gira hacia la calle)
 const HP = [['#D8C8AE', '#71708A'], ['#A6869B', '#482642'], ['#BF895A', '#580213']]
+// casas y edificios: su planta no se puede atravesar (antes se podía caminar por dentro de las esquinas)
+const plantaSolida = (w, d, x, z, ry) => { const giro = Math.abs(Math.sin(ry)) > 0.5; solid(giro ? d : w, giro ? w : d, x, z) }
 const house = (x, z, h, k, ry = 0, w = rr(5.5, 7)) => { const [c, t] = HP[k % 3], g = new THREE.Group()
     g.position.set(x, -0.15, z); g.rotation.y = ry
     box(w, h, 3, 0, h / 2, 0, c, t, g); box(w + 0.7, 0.3, 3.7, 0, h + 0.15, 0, '#A16A49', '#201826', g); box(w * 0.5, 0.5, 2.2, 0, h + 0.5, 0, '#BF895A', '#580213', g)
     box(1.1, 2, 0.12, 0, 1.0, 1.55, '#A16A49', '#201826', g); box(1.3, 0.9, 0.12, w * 0.28, h * 0.55 + 0.15, 1.55, '#8296B7', '#201826', g)
+    plantaSolida(w - 0.3, 2.5, x, z, ry) // (un poco menos que la casa: la puerta de la casa de Gabriela se alcanza por el caminito)
     cur.add(g); return warpable(g, x * 1.7 + z, true) }
 const building = (x, z, h, k, ry = 0) => { const [c, t] = HP[k % 3], g = new THREE.Group(), win = []
     g.position.set(x, -0.15, z); g.rotation.y = ry
     box(5.6, h, 3.4, 0, h / 2, 0, c, t, g); box(6.0, 0.3, 3.8, 0, h + 0.15, 0, '#A16A49', '#201826', g); box(1.2, 2, 0.12, 0, 1.0, 1.72, '#A16A49', '#201826', g)
     for (let f = 0; f < Math.floor((h - 2.5) / 2.2); f++) for (let k2 = -1; k2 <= 1; k2++) win.push([k2 * 1.6, 2.75 + f * 2.2, 1.72])
     if (win.length) scatter(new THREE.BoxGeometry(0.8, 0.9, 0.1), '#8296B7', '#201826', win, g) // ventanas: una malla instanciada por edificio
+    plantaSolida(5.4, 3.2, x, z, ry)
     cur.add(g); return warpable(g, x * 1.7 + z, true) }
 house(HOME_DOOR.x, HOME_DOOR.z, 4.2, 1, 0, 6).userData.warp.home = true                                          // casa de Gabriela (tamaño fijo; no se mueve en los sustos)
 const placed = [[HOME_DOOR.x, HOME_DOOR.z]]
@@ -526,6 +543,9 @@ for (let k = 0, n = 0; k < 400 && n < 35; k++) { // árboles sueltos detrás de 
 
 // Paradero del MIO (la marca roja del plano)
 model('assets/bus/parada/parada-mio.fbx', 'assets/bus/parada/parada-mio-oscuro.fbx', cur, 0.012, W.busX - 1.8, -0.09, -4.3) // modelo final del paradero
+// el paradero es sólido de punta a punta (banca, pared de atrás y todo lo que cubre el techo, hasta los postes del frente): antes se
+// podía caminar debajo del techo y la prota quedaba tapada por él
+solid(3.85, 1.3, W.busX - 1.8, -4.1)
 
 // Universidad al final del último tramo (se aleja cuando la calle se vuelve eterna)
 const UNI_Z = GATE - 5, uniG = new THREE.Group(); uniG.position.set(UX, -0.15, UNI_Z); cur.add(uniG)
@@ -553,7 +573,7 @@ SEGS.forEach((s, i) => {
     }
 })
 makeLayer('MID', mid)
-posts.forEach(([x, z, w, h, d]) => box(w, h, d, x, h / 2 - 0.15, z, '#BF895A', '#580213')) // postes fijos: antes se "reconstruían" tras cada minijuego y cambiaban de forma, tamaño y color de golpe
+posts.forEach(([x, z, w, h, d]) => { box(w, h, d, x, h / 2 - 0.15, z, '#BF895A', '#580213'); solid(w, d, x, z) }) // (sólidos) · postes fijos: antes se "reconstruían" tras cada minijuego y cambiaban de forma, tamaño y color de golpe
 // (sin capa de escombros al frente de la calle 1: ahora ahí hay casas)
 
 // Fallas de la ansiedad (desde el nivel de falla 1: sube al perder un minijuego y baja al ganar uno): copias translúcidas de postes, muros y pedazos de edificio que titilan y
@@ -572,11 +592,12 @@ for (let d = 6; d < ROUTE_LEN - 4; d += rr(3, 5.5)) { // a los lados de la calle
 }
 ;[[-5.2, 1.8], [-4.0, -1.8], [-2.3, 1.6], [-6.2, -0.6], [-3.6, 0.4], [-4.9, -0.2]].forEach(([x, z], i) => makeGhost('HOUSE', x, z, i))               // cuarto
 ;[[HX - 4.5, -1.6], [HX - 0.5, 2.8], [HX + 3.4, -2.6], [HX + 5.2, 1.0], [HX - 5.2, 2.6], [HX + 0.2, -1.2]].forEach(([x, z], i) => makeGhost('HOME', x, z, i + 2)) // planta baja
+export const GHOSTS = ghosts // (npcs.js: tocarlas calma un poco, ver la mecánica secreta)
 function updateGhosts() {
     const k = runtime.postQuake && runtime.glitch >= 1 ? Math.min(1, Math.max(0, (runtime.anxiety - 0.3) / 0.55)) : 0 // nivel de falla 1 o más (sube al perder un minijuego y baja al ganar) · 0 = nada · 1 = todas las fallas
     ghosts.forEach(g => {
         if (g.space !== runtime.space) return
-        const want = g.rank < k
+        const want = g.rank < k && !(g.calm > performance.now()) // una falla que tocaste no vuelve por un rato
         if (!want) { if (g.on) { g.on = false; g.m.visible = false } return }
         if (!g.on || Math.random() < 0.04) g.off = [rr(-0.6, 0.6), rr(-0.6, 0.6)] // de vez en cuando salta a otro lado
         g.on = true
@@ -602,7 +623,8 @@ const SEAT_DEFS = [['Cube005', -244, -64, 0], ['Cube006', -149.5, -64, 0], ['Cub
 export const SEAT_Y = 94 * BUS_S - 1.024 // altura del cojín (ahí se apoya quien se sienta)
 SEAT_DEFS.forEach(([name, x, z, f]) => { // brillo suave alrededor de cada asiento libre, con la forma de la silla (main.js lo enciende mientras estás de pie)
     const glow = new THREE.Group(); glow.visible = false; cur.add(glow)
-    SEATS.push({ name, x: BUS_X + x * BUS_S, z: z * BUS_S, face: [Math.PI / 2, 0, Math.PI][f], taken: false, glow })
+    // adelante: cuánto más al frente del cojín se sienta (en las bancas largas el espaldar es más grueso: con 0.1 se metía en él)
+    SEATS.push({ name, x: BUS_X + x * BUS_S, z: z * BUS_S, face: [Math.PI / 2, 0, Math.PI][f], taken: false, glow, adelante: f ? 0.3 : 0.1 })
 })
 const LLANTA = mat('#482642', '#201826', { flatShading: false })
 model('assets/bus/interior/bus.fbx', 'assets/bus/interior/bus_Oscuro.fbx', cur, BUS_S, BUS_X, -1.024, 0, {
@@ -632,6 +654,9 @@ export const DRIVER_SEAT = { x: BUS_X + 278 * BUS_S, z: -62.5 * BUS_S }
 // Puertas del MIO (donde el piso del modelo baja en escalón, del lado de la cámara): después del sismo te puedes parar y bajarte por cualquiera.
 // Cada una lleva una flecha brillante en el piso (como las de la casa) que main.js muestra mientras estás de pie
 export const BUS_DOORS = [[-283, -198], [-49, 44], [251, 337]].map(([a, b]) => [BUS_X + a * BUS_S, BUS_X + b * BUS_S])
+// las puertas: solo ahí se puede bajar el escalón hasta la salida. Antes todo el lado de las puertas era caminable hasta afuera y,
+// pasando por un escalón, se podía caminar por fuera de las paredes (y hasta encima de las llantas)
+BUS_DOORS.forEach(([x0, x1]) => RECTS.BUS.push([x0 + 0.1, x1 - 0.1, 1.0, 1.9]))
 export const busExits = new THREE.Group(); busExits.visible = false; cur.add(busExits)
 {
     const tri = new THREE.Shape(); tri.moveTo(-0.38, 0); tri.lineTo(0.38, 0); tri.lineTo(0, 0.5); tri.closePath() // punta hacia afuera del MIO (+z)
@@ -667,7 +692,7 @@ export const props = {
     maleta: { pos: V(-2.68, 1.25), mesh: bag, mark: { x: -2.68, y: 1.8, z: 0.24 } },   // la maleta está sobre la cama, a los pies
     puerta: { pos: V(...mid2(DOORS.cuarto)), mesh: null, mark: { x: mid2(DOORS.cuarto)[0], y: 1.4, z: mid2(DOORS.cuarto)[1] } }, // flecha del piso que baja a la sala
     mama: { pos: V(MOM_SPOT.x, MOM_SPOT.z), mesh: null, mark: { x: MOM_SPOT.x, y: 2.7, z: MOM_SPOT.z } }, // mamá no brilla: solo la flecha encima
-    desayuno: { pos: V(TABLE[1] + 0.5, (TABLE[2] + TABLE[3]) / 2), mesh: breakfast, rect: TABLE, mark: { x: breakfast.position.x, y: 1.9, z: breakfast.position.z } }, // rect: se come estando cerca de la mesa (no en un punto exacto)
+    desayuno: { pos: V(DINING_SEAT.x + 0.7, DINING_SEAT.z - 0.4), mesh: breakfast, rect: TABLE, mark: { x: breakfast.position.x, y: 1.9, z: breakfast.position.z } }, // rect: se come estando cerca de la mesa (no en un punto exacto)
     salida: { pos: V(...mid2(DOORS.calle)), mesh: null, mark: { x: mid2(DOORS.calle)[0], y: 1.4, z: mid2(DOORS.calle)[1] } },   // flecha de la entrada
     // MIO por fuera (temporal). rect = huella en planta (para medir la cercanía)
     bus: { pos: V(W.busX, 1), mesh: outlined(box(6, 2, 2.2, W.busX + 4, 1, -1.8, '#2F7DAA', '#482642', S), 6, 2, 2.2, 0.2, 0, SOFT),
@@ -688,7 +713,7 @@ marker.rotation.x = Math.PI; root.add(marker)
 
 // 12. Fondo y tema de color: parte del --color-soporte-claro y se oscurece con la ansiedad
 const bgClear = new THREE.Color('#8296B7'), bgDark = new THREE.Color('#201826')
-const bgPost = new THREE.Color(), hsl = {}
+const bgPost = new THREE.Color(), bgAzul = new THREE.Color('#56668A') // después del sismo el cielo se apaga a un azul oscuro (antes quedaba gris)
 let cssRead = false, lastA = -1
 const readCss = () => {
     const v = getComputedStyle(document.documentElement).getPropertyValue('--color-soporte-claro').trim()
@@ -700,8 +725,8 @@ function applyTheme(a) {
     if (!(scene.background instanceof THREE.Color)) scene.background = new THREE.Color()
     let base = bgClear
     const dull = Math.min(1, Math.max(0, (runtime.levelVis ?? -1) + 1)) // nivel -1: cielo normal · nivel 0 o más: apagado (el final bueno lo devuelve)
-    if (dull > 0) { bgPost.copy(bgClear).lerp(bgDark, 0.65 * dull); bgPost.getHSL(hsl); bgPost.setHSL(hsl.h, hsl.s * (1 - 0.7 * dull), hsl.l); base = bgPost }
-    scene.background.copy(base).lerp(bgDark, a)
+    if (dull > 0) { bgPost.copy(bgClear).lerp(bgAzul, dull); base = bgPost }
+    scene.background.copy(base).lerp(bgDark, a * 0.45) // con la paleta de ansiedad se oscurece hacia el morado, sin perder del todo el azul
 }
 
 // 13. Calle eterna: con mucha ansiedad la universidad se aleja, la calle se alarga, la niebla se traga el final y el paso rinde menos

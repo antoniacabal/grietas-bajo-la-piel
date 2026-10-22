@@ -20,6 +20,7 @@ import { CONFIG, runtime } from './config.js'
 import { sm } from './stateMachine.js'
 import { renderer, scene, canvas, renderSharp } from './scene.js'
 import { camera, updateCamera } from './camera.js'
+import { DINING_SEAT } from './environment.js'
 import { modelosListos, updateEnvironment, props, uniBus, resetProps, marker, setSpace, SEATS, SEGS, atUniversity, nearUniversity, endless, HOME_DOOR, STREET_X0, ROUTE_LEN, routePoint, nearestSeg, scareBuilding, DOORS, SPAWN, BED_LIE, BUS_DOORS, busExits } from './environment.js'
 import { player } from './player.js'
 import { breathing } from './breathing.js'
@@ -29,6 +30,7 @@ import { ui } from './ui.js'
 import { initDebug } from './debug.js'
 import { updateNpcs, npcState, mom } from './npcs.js'
 import { haptics } from './haptics.js'
+import { INSTRUCCIONES } from './instrucciones.js'
 import './touch.js'
 
 // 1. Constantes y estado
@@ -58,7 +60,7 @@ function startRoutine(post) {
     resetProps(); resetBreakfast()
     up = dressed = down = momDone = ate = out = arrived = busy = busAsked = braked = busDone = false; got.clear(); resetScare(); player.setBackpack(false)
     introEarth = false; progressMax = 0; runtime.asustada = false; runtime.postQuake = post; runtime.healed = false; runtime.envProgress = post ? 0 : 1; runtime.anxiety = post ? 0.08 : 0; runtime.stress = 0
-    houseCrisis = ['armario', ...ITEMS][Math.floor(Math.random() * 3)]; earthRun = 0
+    houseCrisis = ['armario', ...ITEMS][Math.floor(Math.random() * 3)]; earthRun = 0; momAsked.clear(); houseT = 0
     setSpace('HOUSE'); runtime.nextCrisis = C.first; player.lieDown(); CONFIG.camera.x = W.houseCenterX; CONFIG.camera.z = 0
 }
 
@@ -81,7 +83,7 @@ const exitHouse = () => transition(() => { const first = !out; out = true; goStr
 // Volver a entrar: de la calle a la planta baja (por la puerta de la casa) y de la planta baja al cuarto (por la flecha que sube).
 // Al llegar, Gabriela aparece junto a la flecha por la que entró
 const goHome = () => transition(() => goTo('HOME', SPAWN.calle.x, SPAWN.calle.z, HX))
-const goUp = () => transition(() => goTo('HOUSE', SPAWN.cuarto.x, SPAWN.cuarto.z, W.houseCenterX))
+const goUp = () => transition(() => { goTo('HOUSE', SPAWN.cuarto.x, SPAWN.cuarto.z, W.houseCenterX); player.group.rotation.y = Math.PI }) // sobre la flecha de salida, mirando hacia adentro del cuarto
 const goDown = () => transition(() => { down = true; runtime.nextCrisis = rand(C.min, C.max); goTo('HOME', SPAWN.subir.x, SPAWN.subir.z, HX) })  // bajas a la planta baja: cocina, comedor y sala
 // Cámara enfocada: se acerca a un punto (al despertar después del sismo) o al personaje (antes de los finales)
 let focus = null
@@ -108,6 +110,21 @@ function scare(t) {
     gsap.delayedCall(2.8, () => { busy = false; if (runtime.state === 'EXPLORATION') sm.go('ANXIETY') })
     return true
 }
+// Susto adentro (la casa y el MIO, después del sismo): un temblor fantasma sacude todo un momento y Gabriela salta hacia atrás como en la
+// calle; si estaba sentada en el MIO, primero se para. Después llega la crisis. Sale en la mitad de las crisis de adentro
+function sustoAdentro(t) {
+    if (t - lastScare < CONFIG.street.scareGap) return sm.go('ANXIETY')
+    lastScare = t; busy = true; player.setMode('agitated'); const bus = runtime.space === 'BUS'
+    if (player.sitting) player.unsit()
+    ui.say(bus ? 'El MIO se sacude... ¿otra vez?' : '¿Eso... se movió?')
+    const p = player.group.position; player.sobresalto(p.x + (Math.random() - 0.5), p.z - 1.2) // salta hacia atrás, alejándose de la sacudida
+    haptics.buzz([120, 80, 200, 60, 260])
+    gsap.timeline().to(runtime, { quake: 0.3, duration: 0.2 }).to(runtime, { quake: 0.1, duration: 0.3, yoyo: true, repeat: 3 }).to(runtime, { quake: 0, duration: 0.4 })
+    gsap.to({}, { duration: 0.22, repeat: 6, onRepeat: () => !runtime.paused && audio.blip(45 + Math.random() * 20, 0.25, 0.08, 'sawtooth') })
+    gsap.to(runtime, { anxiety: Math.max(runtime.anxiety, 0.55), duration: 1.5 })
+    gsap.delayedCall(2.6, () => { busy = false; if (runtime.state === 'EXPLORATION') sm.go('ANXIETY') })
+}
+const crisisAdentro = (t) => Math.random() < 0.5 ? sustoAdentro(t) : sm.go('ANXIETY')
 function settleScare(ok) { // después de la crisis, el edificio vuelve despacio a su lugar (nunca se cayó)
     if (!scared) return
     gsap.to(scared, { sh: 0, tilt: 0, sink: 0, duration: 2.5, ease: 'power2.out' }); scared = null; scareCalm = ok
@@ -128,7 +145,7 @@ function wakeUp(delay) {
 let houseCrisis = null
 function maybeHouseCrisis(id) {
     if (!runtime.postQuake || !auto() || houseCrisis !== id) return
-    houseCrisis = null; gsap.delayedCall(0.9, () => { if (runtime.state === 'EXPLORATION') sm.go('ANXIETY') })
+    houseCrisis = null; gsap.delayedCall(0.9, () => { if (runtime.state === 'EXPLORATION') crisisAdentro(juegoT) })
 }
 
 // 4. Vestirse y desayuno con mamá
@@ -140,7 +157,7 @@ function dress() { // la acción no se ve: la pantalla funde a negro mientras te
     })
 }
 // Frases: un texto lo dice mamá; [quién, texto] lo dice otra persona. hello = al llegar a la cocina · bye = después de desayunar
-const ME = 'Tú'
+const ME = 'Gabriela'
 const MOM_LINES = {
     pre: {
         hello: ['¡Buenos días, mi amor! ¿Dormiste bien?', 'Te preparé el desayuno: arepa con huevito y chocolate. Está ahí en la isla, cómetelo antes de irte.'],
@@ -168,17 +185,45 @@ function talkToMom() {
     busy = true; player.setMode('stop'); ui.say(''); mom.setTalking(true); faceMom()
     ui.talk('Mamá', momLines().hello, { onEnd: () => { mom.setTalking(false); momDone = true; freeAgain() } })
 }
+// Después del sismo mamá está pendiente: si pierdes un minijuego en la sala, o si te quedas mucho rato en el cuarto, te pregunta si estás
+// bien. Hablar con ella te baja un nivel de ansiedad (una vez por cada motivo en cada día)
+const MOM_CHECK = {
+    perdiste: { who: 'Mamá', lines: ['Gabriela... ¿te sientes bien? Te noto pálida.', [ME, 'Es que... por un momento sentí que todo se movía otra vez.'], 'Ven, mírame. Respira conmigo, despacio... eso es.', 'Aquí estás segura. El piso está quieto y yo estoy contigo.'] },
+    cuarto: { who: 'Mamá', lines: ['Gabriela, mi amor... ¿estás bien? Llevas un buen rato allá arriba.', [ME, 'Sí, ma... es que hoy me está costando un poquito.'], 'Tranquila, sin afán. Aquí te espero; baja cuando estés lista.'] }
+}
+let momAsked = new Set(), houseT = 0 // houseT: cuánto llevas en el cuarto (después de levantarte)
+function momCheck(kind, tries = 0) {
+    if (!runtime.postQuake || momAsked.has(kind) || runtime.sandbox) return
+    if (busy || runtime.state !== 'EXPLORATION') { if (tries < 8) gsap.delayedCall(1, () => momCheck(kind, tries + 1)); return } // espera a que termine lo que estás haciendo
+    momAsked.add(kind); busy = true; player.setMode('stop'); ui.say('')
+    const near = kind === 'perdiste'; if (near) { mom.setTalking(true); faceMom() }
+    ui.talk(MOM_CHECK[kind].who, MOM_CHECK[kind].lines, { onEnd: () => {
+        if (near) mom.setTalking(false)
+        runtime.failStreak = Math.max(0, (runtime.failStreak || 0) - 1); runtime.glitch = runtime.failStreak // un nivel menos de ansiedad
+        gsap.to(runtime, { anxiety: C.baseline + 0.2 * runtime.failStreak, stress: 0, duration: 4 })
+        freeAgain()
+    } })
+}
 const FOOD = () => props.desayuno.mesh.children.slice(1, 3) // arepa y huevo (el plato y la taza se quedan)
 function resetBreakfast() { FOOD().forEach(m => m.scale.setScalar(1)) }
-function eat() { // se ve cómo el desayuno va desapareciendo a mordiscos; después del sismo solo comes un poco
-    busy = true; player.setMode('stop')
-    const post = runtime.postQuake, left = post ? 0.55 : 0.001, p = props.desayuno.mark, [arepa, egg] = FOOD() // mark: donde está el plato (pos es el lugar donde se para)
-    player.group.rotation.y = Math.atan2(p.x - player.x, p.z - player.z) // mira hacia la comida
-    player.comer(true) // la mano lleva bocados a la boca y mastica (personaje.js, pose comer)
-    ui.say(post ? 'Te cuesta tragar... comes despacio.' : 'Comes tu desayuno.')
-    gsap.timeline({ onComplete: () => { ate = true; player.comer(false); ui.say(post ? 'Solo logras comer un poco.' : 'Te comiste todo el desayuno.'); gsap.delayedCall(1.2, momBye) } })
-        .to(arepa.scale, { x: left, y: left, z: left, duration: post ? 2.6 : 1.8, ease: 'steps(4)' })
-        .to(egg.scale, { x: left, y: left, z: left, duration: post ? 1.4 : 0.9, ease: 'steps(2)' }, '+=0.3')
+// Desayunar: Gabriela se sienta en la silla frente al plato (con un fundido corto) y se ve cómo la comida va desapareciendo a mordiscos;
+// después del sismo solo come un poco. Al terminar se para detrás de la silla y mamá se despide. Es su propia escena: Saltar (en los
+// diálogos) no la adelanta
+function eat() {
+    busy = true; player.setMode('stop'); ui.cancelSkip()
+    const post = runtime.postQuake, left = post ? 0.55 : 0.001, [arepa, egg] = FOOD()
+    ui.fade(1, 0.35, () => {
+        player.sit(DINING_SEAT, true); player.comer(true) // la mano lleva bocados a la boca y mastica (personaje.js, pose comerSentada)
+        ui.fade(0, 0.4, () => {
+            ui.say(post ? 'Te cuesta tragar... comes despacio.' : 'Comes tu desayuno.')
+            gsap.timeline({ onComplete: () => {
+                ate = true; ui.say(post ? 'Solo logras comer un poco.' : 'Te comiste todo el desayuno.')
+                gsap.delayedCall(0.8, () => { player.comer(false); player.unsit({ x: DINING_SEAT.x + 0.65, z: DINING_SEAT.z }); player.group.rotation.y = Math.PI / 2; gsap.delayedCall(0.6, momBye) }) // se para al lado de la silla (del lado de la punta de la mesa)
+            } })
+                .to(arepa.scale, { x: left, y: left, z: left, duration: post ? 2.6 : 1.8, ease: 'steps(4)' }, 0.4)
+                .to(egg.scale, { x: left, y: left, z: left, duration: post ? 1.4 : 0.9, ease: 'steps(2)' }, '+=0.3')
+        })
+    })
 }
 function momBye() {
     const post = runtime.postQuake; mom.setTalking(true); ui.say(''); faceMom() // después de comer se voltea de nuevo hacia ella
@@ -188,9 +233,10 @@ function momBye() {
 
 // 5. El MIO: antes del sismo es el viaje normal (el sismo llega durante el trayecto).
 //    Después es opcional y es un atajo: un frenón te devuelve a ese día y después llegan más crisis. Si pierdes un minijuego
-//    te bajas y sigues a pie; si aguantas todo el viaje, el MIO te deja frente a la universidad
+//    sigues en el MIO; si aguantas todo el viaje, el MIO te deja frente a la universidad
 let busRide = 0, busTraumaAt = 0, braked = false, busDone = false, earthRun = 0, busWins = 0, busGoal = 6 // busWins: minijuegos ganados en este viaje (con busGoal te deja en la universidad) · earthRun: Earthings seguidos (nunca más de dos)
-const askBus = () => { busAsked = true; sm.go('CHOICE') }
+let busAway = false // después de decir que no al MIO, hay que alejarse antes de que tocarlo te suba
+const askBus = () => { busAsked = true; busAway = false; sm.go('CHOICE') }
 function boardBus() {
     ui.hideChoice(); if (runtime.state === 'CHOICE') sm.go('EXPLORATION')
     const post = runtime.postQuake
@@ -213,11 +259,9 @@ function busTrauma() { // el MIO frena de golpe y todo vibra: el cuerpo lo vive 
     gsap.to(runtime, { anxiety: Math.max(runtime.anxiety, 0.7), duration: 1.5 })
     shake.eventCallback('onComplete', () => { busy = false; sm.go('ANXIETY') })
 }
-function busLostChoice() { // perdiste un minijuego dentro del MIO: puedes bajarte o intentar seguir hasta la universidad
-    player.setMode('stop')
-    ui.choice('Perdiste el ritmo', 'El MIO sigue avanzando. Puedes bajarte aquí y seguir a pie, o quedarte e intentar llegar hasta la universidad.', [
-        { label: 'Quedarme', dir: 'left', fn: () => { ui.hideChoice(); runtime.nextCrisis = rand(B.crisisMin, B.crisisMax); sm.go('EXPLORATION') } },
-        { label: 'Bajarme', dir: 'right', fn: () => { ui.hideChoice(); busDone = true; sm.go('EXPLORATION'); transition(() => { leaveBus(); ui.say('Te bajas del MIO y sigues a pie.') }) } }])
+function busLostChoice() { // perdiste un minijuego dentro del MIO: sigues en el MIO (antes te podía dejar en la calle; perder nunca te saca del bus)
+    ui.say('Perdiste el ritmo. El MIO sigue avanzando: sigue respirando.')
+    runtime.nextCrisis = rand(B.crisisMin, B.crisisMax); sm.go('EXPLORATION')
 }
 // Earthing dentro del MIO: tú decides si bajarte a buscar pasto o quedarte (y entonces la ansiedad sube un nivel)
 function busEarthChoice() {
@@ -268,7 +312,8 @@ function interact() {
             () => { freeAgain(); maybeHouseCrisis(id) })
         return
     }
-    if (dist(c) > (c === 'mama' ? 2.4 : c === 'desayuno' ? 1.4 : CONFIG.player.reach)) return // lejos: no pasa nada (el desayuno se mide contra toda la mesa: basta estar cerca de cualquier borde)
+    const plato = props.desayuno.mark, lejos = c === 'desayuno' ? Math.hypot(player.x - plato.x, player.z - plato.z) > 1.25 : dist(c) > (c === 'mama' ? 2.4 : CONFIG.player.reach)
+    if (lejos) return // lejos: no pasa nada (el desayuno se mide contra el plato: antes bastaba estar cerca de cualquier borde de la mesa y se podía comer desde la otra punta)
     if (c === 'armario') return dress()
     if (c === 'puerta') return goDown()
     if (c === 'mama') return talkToMom()
@@ -281,15 +326,8 @@ addEventListener('keydown', (e) => e.code === 'KeyE' && !e.isTrusted && !e.repea
 
 // 7. Explicación de los minijuegos: sale la primera vez que aparece cada tipo (se reinicia al recargar la página)
 const seenTutorials = new Set()
-const TUTORIALS = { // cortas: lo justo para jugar (el botón "?" las muestra otra vez)
-    hold: ['Al inhalar y sostener, mantén el clic o la barra espaciadora (en celular, Interactuar). Al exhalar, suelta.',
-           'Tu círculo tiene que seguir al aro, dentro de la franja gris. Si te sales, la crisis no pasa.',
-           'Los colores te guían: verde azulado inhalar, dorado sostener, lila exhalar.',
-           'Si el círculo de afuera empieza a brillar, puede que el ejercicio se repita: prepárate para volver a inhalar.'],
-    earth: ['Camina hasta un pedazo de pasto verde junto a la calle: la flecha te guía.', 'Quédate encima hasta llenar la barra, antes de que se acabe el tiempo.'],
-    cats: ['Toca lo más rápido que puedas los 6 elementos de la categoría.', 'Cuidado: si te equivocas 3 veces, pierdes la ronda.']
-}
-const tutorialFor = (tech) => { const mech = tech.game || 'hold'; return { sub: mech === 'hold' ? 'Ejercicios de respiración' : tech.name, steps: TUTORIALS[mech], page: tech.page } }
+// Tres imágenes con una frase corta por minijuego (instrucciones.js); el botón "?" las muestra otra vez
+const tutorialFor = (tech) => { const mech = tech.game || 'hold'; return { sub: mech === 'hold' ? 'Ejercicios de respiración' : tech.name, steps: INSTRUCCIONES[mech], page: tech.page } }
 
 // 8. Máquina de estados
 sm.on('INTRO', () => {
@@ -306,8 +344,15 @@ function intro() {
     gsap.delayedCall(3, () => { ui.card(); ui.fade(0, 1.5, () => document.body.classList.contains('gx-touch-on') ? start() : ui.controls(start)) })
 }
 sm.on('EXPLORATION', () => { player.setMode('free') })
+// Saltar durante el sismo (y su explicación) lleva directo a "Una semana después": se corta todo lo que estaba pasando
+function skipQuake() {
+    gsap.globalTimeline.clear(); clearInterval(rumble); haptics.stop()
+    quakeSnd?.stop(); quakeSnd = null; sirenSnd?.stop(); sirenSnd = null
+    runtime.quake = 0; ui.cortarEscena(); ui.fade(1, 0.3, weekLater)
+}
 sm.on('QUAKE', () => {
     player.setMode('stop'); ui.say(''); ui.card('07:34 a. m.')
+    if (!runtime.sandbox) ui.setSkip(skipQuake)
     gsap.delayedCall(2.5, () => {
         ui.card(); clearInterval(rumble)
         quakeSnd?.stop(); quakeSnd = audio.playFile('audios/sonido-terremoto.mp3', { volume: 0.22 }) // sonido grabado del terremoto
@@ -329,6 +374,7 @@ sm.on('ANNOUNCEMENT', () => {
 // "Una semana después": empieza la parte de después del sismo (también se vuelve aquí desde el final malo)
 let quakeSnd = null, sirenSnd = null // sonidos grabados del sismo (audio.playFile)
 function weekLater() {
+    ui.setSkip(null) // (el salto del sismo ya no aplica)
     sirenSnd?.fade(1.5); sirenSnd = null // (por si acaso: la sirena ya se apagó antes de la explicación del sismo)
     ui.card('Una semana después', '6:00 a. m.')
     gsap.delayedCall(3, () => { // la casa aparece despacio, con la cámara cerca de la cama, y se va abriendo
@@ -371,7 +417,7 @@ sm.on('BREATHING', () => {
     ui.announce(tech.name, go) // primero el anuncio grande con el nombre de la técnica
 })
 sm.on('CALM', () => { // transitorio: la crisis pasó y la rutina continúa
-    player.setMode('calm'); ui.say(scareCalm ? 'El edificio sigue en su lugar. Estás aquí. Ahora.' : 'Estás aquí. Ahora.'); scareCalm = false
+    player.setMode('calm'); ui.say(scareCalm ? 'El edificio sigue en su lugar. Estás aquí. Ahora.' : runtime.techId === 'conteo' ? 'El suelo está quieto otra vez.' : runtime.techId === 'gravedad' ? 'El suelo está derecho. Respiras hondo.' : runtime.techId === 'foco' ? 'Escuchas la gota, constante. El ruido se aleja.' : 'Estás aquí. Ahora.'); scareCalm = false
     gsap.delayedCall(2.5, () => { if (runtime.state === 'CALM') sm.go('EXPLORATION') })
 })
 // Finales: antes de la escena final Gabriela mira a la cámara y la cámara se acerca despacio a ella
@@ -381,11 +427,13 @@ sm.on('FAILURE', () => {
 })
 sm.on('ARRIVAL', () => {
     arrived = true; runtime.healed = true; runtime.asustada = false; player.setMode('calm'); breathing.stop(); // healed: el mundo vuelve al nivel -1 (colores normales, sin blur)
+    // ganaste: se acaba todo lo de la ansiedad (sin temblor, sin fallas ni fantasmas, música tranquila: la música sigue a la ansiedad)
+    runtime.failStreak = 0; runtime.glitch = 0; runtime.quake = 0; resetScare(); gsap.killTweensOf(runtime, 'anxiety,stress'); runtime.stress = 0
     ui.showBreath(false); ui.say('Llegaste a la universidad.')
-    gsap.to(runtime, { anxiety: 0, envProgress: 1, duration: 4 }); finalShot(() => gsap.delayedCall(1.2, () => sm.go('ENDING_GOOD')))
+    gsap.to(runtime, { anxiety: 0, duration: 1.5 }); gsap.to(runtime, { envProgress: 1, duration: 4 }); finalShot(() => gsap.delayedCall(1.2, () => sm.go('ENDING_GOOD')))
 })
-sm.on('ENDING_GOOD', () => ui.ending('Final positivo', 'El miedo no desapareció de un momento a otro. Pero aprendiste a volver al presente. [PLACEHOLDER]')) // volver a jugar: desde el principio
-sm.on('ENDING_BAD', () => ui.ending('Final negativo', 'A veces volver a sentirse seguro toma tiempo. Pedir ayuda también puede ser parte del proceso. [PLACEHOLDER]', retryPostQuake)) // volver a intentarlo: desde la semana después del sismo
+sm.on('ENDING_GOOD', () => ui.ending('Final positivo', 'El miedo no desapareció de un momento a otro. Pero aprendiste a volver al presente.')) // volver a jugar: desde el principio
+sm.on('ENDING_BAD', () => ui.ending('Final negativo', 'A veces volver a sentirse seguro toma tiempo. Pedir ayuda también puede ser parte del proceso.', retryPostQuake)) // volver a intentarlo: desde la semana después del sismo
 
 // 9. Eventos de respiración: cada evento es UN solo ciclo
 breathing.init({
@@ -412,8 +460,9 @@ breathing.init({
         }
         runtime.failures++; runtime.failStreak = (runtime.failStreak || 0) + 1; runtime.glitch = runtime.failStreak; runtime.anxiety = Math.min(1, runtime.anxiety + CONFIG.anxiety.failPenalty); ui.say('Perdiste el ritmo. Sigue, sin prisa.')
         if (runtime.failStreak >= CONFIG.maxFailures) return sm.go('FAILURE')
-        if (bus && runtime.postQuake) return void gsap.delayedCall(1.6, () => { if (runtime.state === 'BREATHING') sm.go('BUS_LOST') }) // en el MIO: ¿bajarse o seguir?
+        if (bus && runtime.postQuake) return void gsap.delayedCall(1.6, () => { if (runtime.state === 'BREATHING') sm.go('BUS_LOST') }) // en el MIO: sigues en el MIO
         gsap.delayedCall(2, () => { if (runtime.state === 'BREATHING') sm.go('EXPLORATION') })
+        if (runtime.space === 'HOME') gsap.delayedCall(2.8, () => momCheck('perdiste')) // en la sala, mamá lo nota
     }
 })
 
@@ -446,7 +495,8 @@ initDebug({ jumpTo, playGame, forceCrisis, resetTutorials: () => seenTutorials.c
 // 11. Bucle principal
 const clock = new THREE.Clock()
 // Más gente cerca, más ansiedad y choques con NPCs = más probabilidad de crisis (el temporizador corre más rápido)
-let lastBumps = 0, crowdSaid = -99, crowdHits = 0 // crowdHits: choques con gente desde el último "nivel" de ansiedad
+let lastBumps = 0, lastCalms = 0, crowdSaid = -99, crowdHits = 0 // lastCalms: alucinaciones tocadas · crowdHits: choques con gente desde el último "nivel" de ansiedad
+const CALMAS = ['Lo tocas... y no hay nada. Estás aquí.', 'No era real. Respiras un poco mejor.', 'Ahí no hay nadie. Tu cuerpo lo entiende.'] // frases al tocar una alucinación
 const fragile = () => (runtime.failStreak || 0) >= 2 // con dos minijuegos perdidos seguidos, chocar con alguien basta para una crisis
 const crisisMult = () => Math.min(2.5, 1 + npcState.near * 0.35 + runtime.anxiety * 1.5 + (fragile() ? runtime.stress * 2 : 0)) // con tope: si no, rodeada de gente las crisis se encadenaban sin pausa · los choques solo aceleran la crisis si estás frágil
 let lastState = '', stateT = 0, breathIdle = 0 // breathIdle: segundos en BREATHING con el minijuego ya terminado (no desde que empezó)
@@ -474,7 +524,7 @@ function doors(t) { // flechas del piso (y el caminito de la calle): pisarlas ca
 function street(t, dt) {
     const k = endless() // calle eterna
     if (k > 0.6 && !endlessSaid) { endlessSaid = true; ui.say('La calle parece no terminar nunca...') } else if (k < 0.3) endlessSaid = false
-    if (!runtime.postQuake) { if (!busy && auto() && current() === 'bus' && nearBus(0.9)) boardBus(); return }
+    if (!runtime.postQuake) { if (!busy && current() === 'bus' && nearBus(0.9)) boardBus(); return } // caminar hasta el MIO te sube (también en el modo debug)
     if (!auto()) { if (atUniversity(player.x, player.z)) blockMsg(t, 'Llegaste a la universidad (modo debug: el final no se activa).'); return }
     if (runtime.anxiety < C.driftMax) runtime.anxiety += C.drift * dt // incomodidad que va creciendo
     if (!busy && !nearUniversity(player.x, player.z) && (runtime.nextCrisis -= dt * Math.min(CONFIG.street.multMax, crisisMult())) <= 0) { // crisis esporádicas (en la calle se aceleran menos con la gente): a veces empiezan con un edificio que parece moverse
@@ -482,7 +532,9 @@ function street(t, dt) {
         return sm.go('ANXIETY')
     }
     if (!arrived && atUniversity(player.x, player.z)) return sm.go('ARRIVAL')
-    if (!busy && !current() && !busAsked && !busDone && !arrived && nearBus(0.9)) askBus()
+    // tocar el MIO: la primera vez pregunta si subir; si dijiste que no, alejarte y volver a caminar hacia él te sube
+    if (!nearBus(2)) busAway = true
+    if (!busy && !current() && !busDone && !arrived && nearBus(0.9)) { if (!busAsked) askBus(); else if (busAway) { busAway = false; boardBus() } }
 }
 // Flecha guía: una punta dorada que flota a la altura del pecho de Gabriela y señala hacia el objetivo (en la calle, hacia la universidad).
 // Reemplaza los textos de "ve a...": solo aparece cuando el objetivo está lejos. Antes iba pegada al piso y parecía hundirse en el pasto
@@ -539,11 +591,18 @@ const tick = () => {
     requestAnimationFrame(tick) // se agenda primero: un error en un cuadro ya no congela el juego
     try { frame() } catch (e) { console.error(e) }
 }
+let juegoT = 0 // tiempo del juego (no corre en pausa)
 const frame = () => {
-    const dt = runtime.paused ? 0 : Math.min(clock.getDelta(), 0.1); if (runtime.paused) clock.getDelta()
-    const t = clock.elapsedTime, sp = runtime.space, explore = dt > 0 && runtime.state === 'EXPLORATION'
+    // en pausa (salida rápida o un pop-up) TODO se detiene: solo se vuelve a dibujar el mismo cuadro. Antes el reloj seguía y Gabriela,
+    // la gente, las fallas y el temblor de la cámara se seguían moviendo (el audio y GSAP ya se pausaban en ui.js)
+    if (runtime.paused) { clock.getDelta(); ui.updateOverlay(); renderer.render(scene, camera); renderSharp(camera, runtime.sharpPlayer); return }
+    const dt = Math.min(clock.getDelta(), 0.1)
+    if (runtime.postQuake && up && runtime.space === 'HOUSE' && runtime.state === 'EXPLORATION' && !busy && (houseT += dt) > 35) momCheck('cuarto') // 35 s en el cuarto: mamá pregunta desde abajo
+    const t = (juegoT += dt), sp = runtime.space, explore = dt > 0 && runtime.state === 'EXPLORATION'
     // Gente cerca (después del sismo): la ansiedad sube mientras estés rodeada y cada choque la dispara y sacude la cámara
     const crowd = runtime.postQuake && auto() && explore && !busy && (sp === 'STREET' || sp === 'BUS')
+    // mecánica secreta: tocaste una alucinación y no había nada (npcs.js ya bajó un poco la ansiedad)
+    if (npcState.calms !== lastCalms) { lastCalms = npcState.calms; ui.say(CALMAS[npcState.calms % CALMAS.length]); audio.blip(523, 0.4, 0.05) }
     if (npcState.bumps !== lastBumps) {
         lastBumps = npcState.bumps
         if (crowd) {
@@ -572,11 +631,11 @@ const frame = () => {
                     runtime.rideLeft -= dt
                     if (!braked) { if ((busRide += dt) >= busTraumaAt) busTrauma() }
                     else if (runtime.rideLeft <= 0) rideEnd() // (respaldo: el viaje termina normalmente al ganar busGoal minijuegos)
-                    else if ((runtime.nextCrisis -= dt * Math.min(2.2, crisisMult() * B.closed)) <= 0) sm.go('ANXIETY')
+                    else if ((runtime.nextCrisis -= dt * Math.min(2.2, crisisMult() * B.closed)) <= 0) crisisAdentro(t)
                 }
             }
         } else if (sp === 'HOUSE' || sp === 'HOME') { // en el cuarto la crisis la dispara una acción al azar (maybeHouseCrisis); en la planta baja, el tiempo
-            if (runtime.postQuake && up && !busy && auto()) { if (runtime.anxiety < C.driftMax) runtime.anxiety += C.drift * dt; if (sp === 'HOME' && (runtime.nextCrisis -= dt * crisisMult()) <= 0) sm.go('ANXIETY') }
+            if (runtime.postQuake && up && !busy && auto()) { if (runtime.anxiety < C.driftMax) runtime.anxiety += C.drift * dt; if (sp === 'HOME' && (runtime.nextCrisis -= dt * crisisMult()) <= 0) crisisAdentro(t) }
         } else if (sp === 'STREET') street(t, dt)
     }
     // Objetivo: brilla, tiene el marcador encima y la flecha guía apunta hacia él
@@ -607,7 +666,7 @@ const frame = () => {
     breathing.update(dt); player.update(dt, t); updateNpcs(dt, t); updateAnxiety(dt); updateEnvironment(dt)
     // Cámara: fija dentro de la casa y del MIO; en la calle sigue al personaje (también cuando la calle gira)
     const s2 = runtime.space
-    if (focus === 'player') updateCamera(t, dt, player.x, player.z)
+    if (focus === 'player' || runtime.zoomJugador) updateCamera(t, dt, player.x, player.z) // (zoomJugador: Reconstruir la gravedad se acerca a Gabriela)
     else if (focus) updateCamera(t, dt, focus.x, focus.z)
     else if (s2 === 'STREET' && breathing.active && runtime.techId === 'earth') updateCamera(t, dt, player.x + 1.8, player.z + 1.8) // Earthing: Gabriela queda arriba del medidor y nunca la tapa
     else if (s2 === 'HOUSE') updateCamera(t, dt, W.houseCenterX, 0)

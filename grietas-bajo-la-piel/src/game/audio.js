@@ -15,6 +15,7 @@
 // │ Para usar la pista definitiva: guardarla en /static/audio y escribir su      │
 // │ ruta en CALM_MUSIC_FILE, por ejemplo '/audio/musica-tranquila.mp3'.          │
 // └──────────────────────────────────────────────────────────────────────────────┘
+import gsap from 'gsap' // (el ruido del conteo de grounding se apaga con GSAP)
 const CALM_MUSIC_FILE = ''
 
 // 1. Estado y utilidades
@@ -95,7 +96,97 @@ function playFile(url, { volume = 0.7, loop = false } = {}) {
     return snd
 }
 
+// Ruido de fondo del conteo de grounding: un ruido sordo (café) que pasa por un filtro pasa-bajos. Con cada acierto el filtro baja y el volumen
+// también (GSAP): suena como si el mundo se fuera calmando. Respeta "Efectos: OFF"
+let ruidoSrc = null, ruidoFiltro = null, ruidoGain = null
+const RUIDO = 0.05
+const ruido = {
+    start() {
+        if (!ctx || ruidoSrc) return
+        const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0)
+        let ult = 0; for (let i = 0; i < len; i++) { ult = (ult + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = ult * 3.5 }
+        ruidoSrc = ctx.createBufferSource(); ruidoSrc.buffer = buf; ruidoSrc.loop = true
+        ruidoFiltro = ctx.createBiquadFilter(); ruidoFiltro.type = 'lowpass'; ruidoFiltro.frequency.value = 1800
+        ruidoGain = ctx.createGain(); ruidoGain.gain.value = 0
+        ruidoSrc.connect(ruidoFiltro); ruidoFiltro.connect(ruidoGain); ruidoGain.connect(ctx.destination); ruidoSrc.start()
+        gsap.to(ruidoGain.gain, { value: fxOn ? RUIDO : 0, duration: 0.8 })
+    },
+    calma(k) { // 0 → 1
+        if (!ruidoSrc) return
+        gsap.to(ruidoFiltro.frequency, { value: 1800 - 1500 * k, duration: 0.8, ease: 'power2.out' })
+        gsap.to(ruidoGain.gain, { value: (fxOn ? RUIDO : 0) * (1 - 0.75 * k), duration: 0.8 })
+    },
+    stop() {
+        if (!ruidoSrc) return
+        const src = ruidoSrc, g = ruidoGain; ruidoSrc = null
+        gsap.to(g.gain, { value: 0, duration: 0.6, onComplete: () => { try { src.stop() } catch { /* ya se detuvo */ } } })
+    }
+}
+
+// Ruido blanco o café (para el caos de la radio, el suspiro y el ruido del conteo)
+function bufferRuido(cafe = false, seg = 2) {
+    const len = ctx.sampleRate * seg, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0)
+    let ult = 0
+    for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; if (cafe) { ult = (ult + 0.02 * w) / 1.02; d[i] = ult * 3.5 } else d[i] = w }
+    return buf
+}
+// Suspiro de alivio (al ganar Reconstruir la gravedad): aire filtrado que entra y sale despacio
+function suspiro() {
+    if (!ctx || !fxOn) return
+    const t = ctx.currentTime, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain()
+    src.buffer = bufferRuido(false, 2.4); f.type = 'bandpass'; f.Q.value = 0.8
+    f.frequency.setValueAtTime(700, t); f.frequency.linearRampToValueAtTime(1100, t + 0.8); f.frequency.linearRampToValueAtTime(450, t + 2.2)
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.7); g.gain.linearRampToValueAtTime(0.03, t + 1.1); g.gain.linearRampToValueAtTime(0, t + 2.3)
+    src.connect(f); f.connect(g); g.connect(ctx.destination); src.start(t); src.stop(t + 2.4)
+}
+// Foco entre el ruido (volúmenes bajos a propósito: se siente el caos sin lastimar los oídos; nada agudo ni fuerte): el caos de después del sismo (sirena, alarma de carro, zumbido en los oídos, retumbos y estática que cambia con el
+// dial) y, escondida, una gota que cae a ritmo constante. mezcla(c, v): c = qué tan cerca está el dial de la gota (0 a 1) · v = posición del dial
+let radioNodos = null
+const CAOS = 0.6 // volumen máximo del caos
+const radio = {
+    start() {
+        if (!ctx || radioNodos) return
+        const t = ctx.currentTime, caos = ctx.createGain(); caos.gain.value = 0; caos.connect(ctx.destination)
+        const osc = (tipo, f, vol) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.type = tipo; o.frequency.value = f; g.gain.value = vol; o.connect(g); g.connect(caos); o.start(); return o }
+        const lfo = (f, prof, destino) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.value = prof; o.connect(g); g.connect(destino); o.start(); return o }
+        const sirena = osc('triangle', 760, 0.018); const l1 = lfo(0.22, 220, sirena.frequency) // sirena lejana (triangular: sin el filo del diente de sierra)
+        const alarma = osc('triangle', 980, 0.005); const l2 = lfo(3, 160, alarma.frequency)  // alarma de carro, al fondo
+        const zumbido = osc('sine', 2900, 0.0025)                                                 // zumbido en los oídos: apenas se nota (antes 5200 Hz, muy agudo)
+        const retumbo = ctx.createBufferSource(); retumbo.buffer = bufferRuido(true); retumbo.loop = true
+        const rf = ctx.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 140; const rg = ctx.createGain(); rg.gain.value = 0.3
+        retumbo.connect(rf); rf.connect(rg); rg.connect(caos); retumbo.start()
+        const estatica = ctx.createBufferSource(); estatica.buffer = bufferRuido(false); estatica.loop = true
+        const ef = ctx.createBiquadFilter(); ef.type = 'bandpass'; ef.Q.value = 1.2; ef.frequency.value = 1500; const eg = ctx.createGain(); eg.gain.value = 0.025
+        estatica.connect(ef); ef.connect(eg); eg.connect(caos); estatica.start()
+        // el caos entra despacio (2 s) y todo pasa por un compresor: nunca hay un golpe de volumen
+        const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -30; comp.ratio.value = 6; caos.disconnect(); caos.connect(comp); comp.connect(ctx.destination)
+        caos.gain.setTargetAtTime(fxOn ? CAOS : 0, t, 0.7)
+        radioNodos = { caos, ef, fuentes: [sirena, l1, alarma, l2, zumbido, retumbo, estatica] }
+    },
+    mezcla(c, v) {
+        if (!radioNodos) return
+        const t = ctx.currentTime
+        radioNodos.caos.gain.setTargetAtTime(fxOn ? CAOS * (0.08 + 0.92 * (1 - c)) : 0, t, 0.2) // el caos nunca desaparece del todo: baja al fondo
+        radioNodos.ef.frequency.setTargetAtTime(300 + v * 3200, t, 0.05)                // la estática cambia de tono al girar, como una radio
+    },
+    gota(c) { // una gota: un "plic" que baja de tono; más fuerte mientras más cerca (un poquito se oye siempre: es la pista)
+        if (!ctx || !fxOn) return
+        const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain()
+        o.type = 'sine'; o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.12)
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.012 + 0.08 * c, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3)
+        o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.32)
+    },
+    stop() {
+        if (!radioNodos) return
+        const n = radioNodos; radioNodos = null
+        n.caos.gain.setTargetAtTime(0, ctx.currentTime, 0.3)
+        setTimeout(() => n.fuentes.forEach(f => { try { f.stop() } catch { /* ya se detuvo */ } }), 1500)
+    }
+}
+
 export const audio = {
+    ruido, radio, suspiro,
+    get silencio() { return !ctx || !musicOn || !fxOn || ctx.state !== 'running' }, // sonido apagado en el juego (o sin audio): breathing.js no saca "Foco entre el ruido"
     playFile,
     init, blip,
     setMusic(v) { musicOn = v; mix(lastA, true) },

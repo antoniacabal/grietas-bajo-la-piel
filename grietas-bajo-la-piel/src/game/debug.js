@@ -70,9 +70,9 @@ export function initDebug(actions) {
     const ce = f('Calle eterna'); ce.add(CONFIG.street, 'from', 0, 1, .01).name('empieza con ansiedad'); ce.add(CONFIG.street, 'full', 0, 1, .01).name('máxima con ansiedad'); ce.add(CONFIG.street, 'endless', 0, 60, 1).name('cuánto se alarga'); ce.add(CONFIG.street, 'slow', 0, .9, .01).name('cuánto frena el paso')
     const en = f('Escenario'); en.add(runtime, 'envProgress', 0, 1, .01).name('environment progress').listen(); en.add(CONFIG.env, 'light', 0, 3, .05).name('light intensity')
     // Cámara: alejarla para revisar el mapa completo (la cámara sigue a Gabriela; muévela con WASD para recorrer)
-    const cam = g.addFolder('Cámara'); cam.add(CONFIG.camera, 'zoom', 0.05, 2.5, 0.01).name('zoom (menos = más lejos)').listen()
+    const cam = g.addFolder('Cámara'); cam.add(CONFIG.camera, 'zoom', 0.05, 2.5, 0.01).name('zoom').listen() // menos = más lejos
     add(cam, { 'Vista general del mapa': () => { CONFIG.camera.zoom = 0.12 }, 'Zoom normal': () => { CONFIG.camera.zoom = 1 } })
-    cam.add(CONFIG.player, 'speed', 1, 30, 0.5).name('velocidad al caminar (para recorrer rápido)')
+    cam.add(CONFIG.player, 'speed', 1, 30, 0.5).name('velocidad') // (nombre corto: con el largo, la barra quedaba casi sin espacio)
 
     // Protagonista: sus animaciones en un espacio aparte (visor.js), sin el resto del juego, con cámara libre y los huesos a la vista
     add(g.addFolder('Protagonista'), { 'Abrir visor de animaciones (con huesos)': () => import('./visor.js').then(m => m.abrirVisor()) })
