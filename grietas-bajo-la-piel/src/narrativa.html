@@ -4,6 +4,7 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title> Grietas bajo la piel </title>
+        <link rel="icon" href="favicon.svg" type="image/svg+xml"> <!-- (sin ícono, el navegador pedía favicon.ico y salía un error 404 en la consola) -->
         <meta name="description" content="Una experiencia interactiva sobre las grietas que llevamos por dentro.">
         <meta name="robots" content="index, follow">
 
@@ -131,7 +132,8 @@
                     <ul class="gx-keys gx-keys--pc">
                         <!-- Caminar: WASD en forma de T invertida, como en el teclado -->
                         <li class="gx-keys-mover"><span class="gx-keycaps"><span class="gx-cruz"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></span><span>para caminar.</span></li>
-                        <li><span class="gx-keycaps"><kbd>Clic</kbd></span><span>para interactuar y saltar los diálogos.</span></li>
+                        <!-- Clic izquierdo: un mouse con el botón izquierdo pintado -->
+                        <li><span class="gx-keycaps"><kbd class="gx-kbd-raton" aria-label="Clic izquierdo"><svg viewBox="0 0 24 32" aria-hidden="true"><rect x="2" y="2" width="20" height="28" rx="10"/><path class="gx-raton-izq" d="M12 2 V13 H2 V12 A10 10 0 0 1 12 2 Z"/><path d="M12 2 V13 M2 13 H22"/></svg></kbd></span><span>clic izquierdo para interactuar y saltar los diálogos.</span></li>
                         <li><span class="gx-keycaps"><kbd>Espacio</kbd></span><span>sostenido en los minijuegos de respiración.</span></li>
                         <li><span class="gx-keycaps"><kbd>F11</kbd></span><span>para entrar o salir de pantalla completa.</span></li>
                     </ul>

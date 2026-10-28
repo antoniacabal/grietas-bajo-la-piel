@@ -359,11 +359,11 @@ sm.on('QUAKE', () => {
         rumble = setInterval(() => { if (runtime.paused) return; haptics.buzz(Math.round(60 + 160 * runtime.quake)) }, 220) // la vibración crece con el sismo
         // la línea de tiempo también lo vive: tiembla "Ir a la Universidad", después toda la barra, y al final se parte en pedazos
         gsap.delayedCall(1.4, () => ui.lineaSismo(1)); gsap.delayedCall(3.8, () => ui.lineaSismo(2)); gsap.delayedCall(5.2, () => ui.lineaRompe()) // cae y se rompe antes del destello
-        gsap.to(runtime, { quake: 1, anxiety: 0.8, duration: 7.5, ease: 'power1.in', onComplete: () => { // 7.5 s (antes 5): se escucha más del audio del sismo
+        gsap.to(runtime, { quake: 0.55, anxiety: 0.8, duration: 7.5, ease: 'power1.in', onComplete: () => { // 7.5 s (antes 5): se escucha más del audio del sismo · hasta 0.55 (antes 1: temblaba demasiado)
             clearInterval(rumble)
             quakeSnd?.fade(1.2); if (runtime.sandbox) return void gsap.to(runtime, { quake: 0, anxiety: 0.1, duration: 1.5, onComplete: () => { ui.lineaRestaurar(); sm.go('EXPLORATION') } }) // debug: el sismo se puede repetir sin seguir la historia
             // el golpe: destello blanco, corte a negro y la sirena de alerta (suena durante "Todo se movió" y se apaga con un fundido antes de la explicación del sismo)
-            ui.flash(); sirenSnd?.stop(); sirenSnd = audio.playFile('audios/sonido-sirena-alarma.mp3', { volume: 0.1 }) // (dura 27 s: no hace falta repetirla); runtime.quake = 0; haptics.buzz(500)
+            ui.flash(); sirenSnd?.stop(); sirenSnd = audio.playFile('audios/sonido-sirena-alarma.mp3', { volume: 0.2, ahogado: true }); runtime.quake = 0; haptics.buzz(500) // (dura 27 s: no hace falta repetirla) · ahogada: como si sonara lejos o Gabriela estuviera bajo el agua (más volumen: el filtro le quita mucho)
             gsap.delayedCall(1.8, () => ui.whisper(['Todo se movió.', 'Y después... silencio.'], () => { sirenSnd?.fade(2.5); sirenSnd = null; gsap.delayedCall(2.6, () => sm.go('ANNOUNCEMENT')) }))
         } })
     })
@@ -625,7 +625,9 @@ const frame = () => {
         if (sp === 'BUS') {
             if (!busy) {
                 if (!runtime.postQuake) { if (auto() && runtime.busMoving && (runtime.rideLeft -= dt) <= 0) sm.go('QUAKE') } // viaje normal: el sismo llega durante el trayecto
-                else if (!player.sitting && player.z > 1.45 && BUS_DOORS.some(([a, b]) => player.x > a && player.x < b)) { busDone = true; transition(leaveBus) } // bajarse por una de las puertas (flechas del piso)
+                // bajarse por una de las puertas (flechas del piso): salir del MIO alivia. La ansiedad que había subido en el viaje vuelve a la de la
+                // calle (detrás del fundido): si no, la paleta de ansiedad hacía que la calle se viera de otro color al bajarse
+                else if (!player.sitting && player.z > 1.45 && BUS_DOORS.some(([a, b]) => player.x > a && player.x < b)) { busDone = true; transition(() => { leaveBus(); gsap.killTweensOf(runtime, 'anxiety'); runtime.anxiety = runtime.visAnx = Math.min(runtime.anxiety, 0.1) }) }
                 else if (runtime.busMoving && auto()) { // viaje con ansiedad: primero el frenón y después crisis seguidas hasta llegar (o hasta perder una)
                     if (runtime.anxiety < B.driftMax) runtime.anxiety += B.drift * dt
                     runtime.rideLeft -= dt
@@ -663,7 +665,7 @@ const frame = () => {
         const s = SEATS.filter(s => !s.taken).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0]
         if (s) { marker.visible = true; marker.position.set(s.x, 2.1 + Math.sin(t * 4) * 0.15, s.z) }
     }
-    breathing.update(dt); player.update(dt, t); updateNpcs(dt, t); updateAnxiety(dt); updateEnvironment(dt)
+    breathing.update(dt); player.update(dt, t); updateNpcs(dt, t); updateAnxiety(dt); updateEnvironment(dt, player.x, player.z)
     // Cámara: fija dentro de la casa y del MIO; en la calle sigue al personaje (también cuando la calle gira)
     const s2 = runtime.space
     if (focus === 'player' || runtime.zoomJugador) updateCamera(t, dt, player.x, player.z) // (zoomJugador: Reconstruir la gravedad se acerca a Gabriela)

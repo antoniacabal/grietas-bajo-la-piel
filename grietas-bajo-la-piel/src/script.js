@@ -200,17 +200,20 @@ async function iniciarMuestra() {
         // del mismo tamaño que la base del modelo (en el archivo va de x -371.4 a 369.4 y de z -329.5 a 328.9) y justo debajo de ella: al ras
         const losa = new THREE.Mesh(new THREE.BoxGeometry(740.8 * SH, 0.34, 658.4 * SH), pintar({ name: 'suelo' }))
         losa.position.set((-1 + 19) * SH, -22 * SH - 0.17, (-0.3 + 5) * SH); cuarto.add(losa)
-        // contorno de la losa: las aristas de los lados y de abajo, no las de arriba (esas coinciden con la base y se veía una raya)
+        // contorno de la losa: las aristas de los lados y de abajo, no las de arriba (esas coinciden con la base y se veía una raya).
+        // Corridas 1.5 cm hacia afuera: justo sobre las caras de la losa, en celulares (con menos precisión de profundidad) se peleaban con
+        // ellas y la línea se veía punteada
+        const afuera = (v, d = 0.015) => v + Math.sign(v) * d
         const losaContorno = (() => {
             const p = new THREE.EdgesGeometry(losa.geometry).attributes.position, quedan = []
-            for (let i = 0; i < p.count; i += 2) if (!(p.getY(i) > 0.1 && p.getY(i + 1) > 0.1)) quedan.push(p.getX(i), p.getY(i), p.getZ(i), p.getX(i + 1), p.getY(i + 1), p.getZ(i + 1))
+            for (let i = 0; i < p.count; i += 2) if (!(p.getY(i) > 0.1 && p.getY(i + 1) > 0.1)) quedan.push(afuera(p.getX(i)), afuera(p.getY(i)), afuera(p.getZ(i)), afuera(p.getX(i + 1)), afuera(p.getY(i + 1)), afuera(p.getZ(i + 1)))
             const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(quedan, 3)); return new THREE.LineSegments(g, contornoMat)
         })()
         losaContorno.visible = false; losa.add(losaContorno); contornos.push(losaContorno)
         // el celular sobre el escritorio, en el mismo lugar que en el juego (environment.js: R0.x - 290 · SH, 1.02, -0.25; aquí el cuarto está corrido 19 · SH y 5 · SH)
         const celular = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.5), pintar({ name: 'Colchon' }))
         celular.position.set((-290 + 19) * SH, 1.02, -0.25 + 5 * SH); cuarto.add(celular)
-        const celularContorno = new THREE.LineSegments(new THREE.EdgesGeometry(celular.geometry), contornoMat); celularContorno.visible = false; celular.add(celularContorno); contornos.push(celularContorno)
+        const celularContorno = new THREE.LineSegments(new THREE.EdgesGeometry(celular.geometry), contornoMat); celularContorno.scale.setScalar(1.04); celularContorno.visible = false; celular.add(celularContorno); contornos.push(celularContorno)
         new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
             cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender
@@ -316,6 +319,38 @@ async function iniciarMuestra() {
             const e = paso(52, 60, y), k = paso(78, 85, y)
             pon(0, B.cadera, 1 - e); pon(1, B.espalda, e * (1 - k)); pon(2, B.cabeza, e * k)
         }
+        // Cara (la misma de game/personaje.js): los ojos dibujados de la hoja de expresiones, pegados a la forma de la cabeza (el pelo queda encima).
+        // En su bailecito, con los ojos cerrados de contenta (el parpadeo normal, fijo); en el glitch de ansiedad, la de después del sismo nivel 3 (espiral)
+        const HOJA = { w: 840, h: 842, x0: 2, y0: 32, dx: 313.5, dy: 214.5, cw: 210, ch: 140 }
+        const EXPRESIONES = { parpadeo: [0, 1], nivel3: [2, 2] }
+        const hojaCaras = new THREE.TextureLoader().load(encodeURI('assets/protagonista/Caras-transparente_Mesa de trabajo 1.png'))
+        hojaCaras.colorSpace = THREE.SRGBColorSpace; hojaCaras.anisotropy = 4; hojaCaras.repeat.set(HOJA.cw / HOJA.w, HOJA.ch / HOJA.h)
+        const mostrarCara = (nombre) => { const [fi, co] = EXPRESIONES[nombre]; hojaCaras.offset.set((HOJA.x0 + co * HOJA.dx) / HOJA.w, 1 - (HOJA.y0 + fi * HOJA.dy + HOJA.ch) / HOJA.h) }
+        mostrarCara('parpadeo')
+        const matCara = new THREE.MeshStandardMaterial({ map: hojaCaras, emissiveMap: hojaCaras, emissive: 0x555555, transparent: true, alphaTest: 0.08, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
+        function armarCara(mallas, cabeza) {
+            const tri = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3()
+            mallas.filter(m => m.name === 'Chibi').forEach(m => { // solo la piel: el pelo queda encima de la cara
+                const g0 = m.geometry.clone().applyMatrix4(m.matrixWorld), g = g0.index ? g0.toNonIndexed() : g0, p = g.attributes.position
+                for (let i = 0; i < p.count; i += 3) {
+                    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2)
+                    if (Math.min(a.y, b.y, c.y) > 80 && Math.max(a.y, b.y, c.y) < 122 && Math.min(a.z, b.z, c.z) > 0) tri.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
+                }
+            })
+            const sup = new THREE.BufferGeometry(); sup.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3))
+            const blanco = new THREE.Mesh(sup, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+            const g = new THREE.PlaneGeometry(36, 36 * HOJA.ch / HOJA.cw, 24, 16), p = g.attributes.position
+            const rayo = new THREE.Raycaster(), desde = new THREE.Vector3(), haciaAtras = new THREE.Vector3(0, 0, -1)
+            for (let i = 0; i < p.count; i++) {
+                const x = p.getX(i), y = p.getY(i) + 106
+                rayo.set(desde.set(x, y, 60), haciaAtras)
+                p.setXYZ(i, x, y - JOINTS.cabeza[2], (rayo.intersectObject(blanco)[0]?.point.z ?? 15) + 0.35)
+            }
+            g.computeVertexNormals()
+            const m = new THREE.Mesh(g, matCara); m.renderOrder = 2; cabeza.add(m)
+        }
+        let caraAhora = 'parpadeo'
+        const cara = (asustada) => { const quiere = asustada ? 'nivel3' : 'parpadeo'; if (quiere !== caraAhora) { caraAhora = quiere; mostrarCara(quiere) } }
         function armar(fbx, escala) {
             const cont = new THREE.Group(), bones = {}, suela = []
             NAMES.forEach(n => { const [p, x, y, z] = JOINTS[n], b = new THREE.Bone(); b.name = n; const q = p ? JOINTS[p] : [0, 0, 0, 0]; b.position.set(x - q[1], y - q[2], z - q[3]); bones[n] = b; if (p) bones[p].add(b) })
@@ -343,6 +378,7 @@ async function iniciarMuestra() {
             // se veía su interior claro (y a través de ella)
             const enagua = new THREE.Mesh(new THREE.CylinderGeometry(15.5, 15.5, 1.2, 24), new THREE.MeshStandardMaterial({ color: 0x15111c, roughness: 1 }))
             enagua.scale.set(1.05, 1, 0.82); enagua.position.set(0, 37.5 - 42, -4.3); bones.cadera.add(enagua)
+            armarCara(mallas, bones.cabeza)
             cont.scale.setScalar(escala)
             return { cont, bones, suela }
         }
@@ -438,6 +474,7 @@ async function iniciarMuestra() {
                 y = -0.03                                                                                  // al encogerse baja lo que se acortan las piernas
             }
             codos(meta) // los codos de ayuda giran la mitad que el antebrazo
+            cara(modo === 'miedo')
             const f = Math.min(1, dt * rapido)
             NAMES.forEach(n => { giro[n].lerp(meta[n], f); prota?.bones[n].rotation.set(giro[n].x, giro[n].y, giro[n].z) })
             // los pies sobre el piso: el cuerpo se apoya en la suela más baja de la pose de este cuadro (como prota.piso() en el juego).

@@ -13,7 +13,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import GUI from 'lil-gui'
-import { crearPersonaje, alturaPaso, alturaFeliz, saltoSusto, SALTO } from './personaje.js'
+import { crearPersonaje, alturaPaso, alturaFeliz, saltoSusto, SALTO, EXPRESIONES } from './personaje.js'
 import { runtime } from './config.js'
 
 // 1. Visor de la protagonista
@@ -56,6 +56,8 @@ export function abrirVisor() {
     gui.add(ajustes, 'huesos').name('ver huesos')
     gui.add(ajustes, 'piso').name('piso y apoyos')
     gui.add(ajustes, 'girar').name('girar sola')
+    // expresiones de la cara (personaje.js): "Parpadeando" usa la normal con su parpadeo; las demás la dejan fija
+    gui.add({ cara: 'Parpadeando' }, 'cara', ['Parpadeando', ...Object.keys(EXPRESIONES)]).name('expresión').onChange(v => prota.fijarCara(v === 'Parpadeando' ? null : v))
     gui.add({ cerrar }, 'cerrar').name('✕ Cerrar el visor')
     window.visor = { ajustes, gui, prota, camara, controles } // (desde la consola: visor.ajustes.animacion = 'correr'; visor.gui.controllersRecursive().forEach(c => c.updateDisplay()))
     const alTeclado = (e) => { if (e.code === 'Escape') { e.stopImmediatePropagation(); cerrar() } }

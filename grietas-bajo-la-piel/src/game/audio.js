@@ -46,7 +46,7 @@ function init() {
         const el = new Audio(CALM_MUSIC_FILE); el.loop = true
         ctx.createMediaElementSource(el).connect(calmGain); el.play().catch(() => {})
     } else {
-        console.warn('[PLACEHOLDER] Música tranquila: suena un pad procedural de prueba. Reemplazar por la pista definitiva (ver CALM_MUSIC_FILE en audio.js).')
+        // (sin pista definitiva: suena el pad procedural de prueba; ver el recuadro PLACEHOLDER de arriba. Antes avisaba en la consola)
         const soft = ctx.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 900
         const trem = ctx.createGain(); trem.gain.value = 0.8
         soft.connect(trem); trem.connect(calmGain)
@@ -78,12 +78,19 @@ function bell() { // campanita suave de la música tranquila (nota al azar de un
 }
 
 // 5. API pública (audio)
-// Sonidos grabados (static/audios): el terremoto y la sirena. Pasan por el mismo audio del juego, así que la pausa y "Música: OFF" también los afectan
+// Sonidos grabados (static/audios): el terremoto y la sirena. Pasan por el mismo audio del juego, así que la pausa y "Música: OFF" también los afectan.
+// ahogado: suena apagado, como de lejos o bajo el agua (un filtro pasa-bajos cuyo corte se mece despacio, como cuando el agua se mueve)
 const playing = new Set()
-function playFile(url, { volume = 0.7, loop = false } = {}) {
+function playFile(url, { volume = 0.7, loop = false, ahogado = false } = {}) {
     if (!ctx || !fxOn) return null
     const el = new Audio(url), g = ctx.createGain(); el.loop = loop; g.gain.value = volume
-    ctx.createMediaElementSource(el).connect(g); g.connect(ctx.destination)
+    const fuente = ctx.createMediaElementSource(el)
+    if (ahogado) {
+        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420; f.Q.value = 2.5
+        const lfo = ctx.createOscillator(), prof = ctx.createGain(); lfo.frequency.value = 0.35; prof.gain.value = 160; lfo.connect(prof); prof.connect(f.frequency); lfo.start()
+        fuente.connect(f); f.connect(g); el.addEventListener('pause', () => { try { lfo.stop() } catch {} }, { once: true })
+    } else fuente.connect(g)
+    g.connect(ctx.destination)
     const snd = {
         el, g,
         fade(d = 1.5) { // se apaga despacio (curva suave hasta 0, sin cortes) y se detiene

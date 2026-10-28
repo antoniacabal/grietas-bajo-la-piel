@@ -14,6 +14,7 @@ import { CONFIG, runtime } from './config.js'
 import { sm } from './stateMachine.js'
 import { TECHS } from './breathing.js'
 import { player } from './player.js'
+import { EXPRESIONES } from './personaje.js'
 import { npcList } from './npcs.js'
 
 // 1. Panel de debug
@@ -75,7 +76,11 @@ export function initDebug(actions) {
     cam.add(CONFIG.player, 'speed', 1, 30, 0.5).name('velocidad') // (nombre corto: con el largo, la barra quedaba casi sin espacio)
 
     // Protagonista: sus animaciones en un espacio aparte (visor.js), sin el resto del juego, con cámara libre y los huesos a la vista
-    add(g.addFolder('Protagonista'), { 'Abrir visor de animaciones (con huesos)': () => import('./visor.js').then(m => m.abrirVisor()) })
+    const prota = g.addFolder('Protagonista')
+    add(prota, { 'Abrir visor de animaciones (con huesos)': () => import('./visor.js').then(m => m.abrirVisor()) })
+    // Expresiones: deja la cara fija en una (sin parpadear) para revisarla; "Automática" vuelve a la del juego
+    const cara = { expresion: 'Automática' }
+    prota.add(cara, 'expresion', ['Automática', ...Object.keys(EXPRESIONES)]).name('expresión').onChange(v => player.prota.fijarCara(v === 'Automática' ? null : v))
 
     // 7. Pruebas
     add(g.addFolder('Pruebas'), {

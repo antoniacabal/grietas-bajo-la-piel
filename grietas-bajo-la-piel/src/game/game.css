@@ -160,6 +160,10 @@ body:not(.gx-vibra-ok) .gx-keys-vibra,body:not(.gx-full-ok) .gx-keys-full{displa
 .gx-cruz kbd:first-child{grid-column:2;grid-row:1}
 .gx-cruz kbd:not(:first-child){grid-row:2}
 .gx-o{font-size:.95rem;opacity:.8}
+/* el mouse del clic izquierdo: el botón izquierdo en dorado */
+.gx-keys kbd.gx-kbd-raton{padding:0 .35rem}
+.gx-kbd-raton svg{width:1.3rem;height:1.75rem;fill:none;stroke:#201826;stroke-width:2.2;stroke-linejoin:round}
+.gx-kbd-raton .gx-raton-izq{fill:var(--color-principal,#F2C063);stroke:none}
 .gx-kbd-icono svg{width:1.15rem;height:1.15rem;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
 .gx-kbd-joy{width:2.1rem;padding:0!important;border-radius:50%!important;position:relative}
 .gx-kbd-joy span{width:.9rem;height:.9rem;border-radius:50%;background:#201826}

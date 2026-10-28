@@ -4,6 +4,7 @@
     // 2. Esqueleto
     // 3. Poses (de pie, caminar / correr, sentada, acostada, miedo, sobresalto, feliz, coger, comer)
     // 4. Exportación
+    // 5. Extras (NPC)
 
 // Protagonista (assets/protagonista/Personaje.fbx): lo usan el juego (player.js) y la muestra del index (script.js).
 // El archivo no trae huesos ni animaciones (está en pose de T): aquí se le arma un esqueleto sencillo y cada vértice se pega
@@ -12,6 +13,7 @@
 // 0. Imports
 import * as THREE from 'three'
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // 1. Colores del archivo: Blender guarda los colores en lineal y el cargador de FBX los lee como si fueran sRGB, así que se veían
 //    mucho más oscuros (pelo casi negro, piel rojiza). Se leen otra vez como lineales: quedan como en Blender
@@ -73,24 +75,74 @@ function pesos(malla, x, y, z, idx, w, o) {
     const e = paso(52, 60, y), k = paso(78, 85, y)
     pon(0, B.cadera, 1 - e); pon(1, B.espalda, e * (1 - k)); pon(2, B.cabeza, e * k)
 }
-function armar(fbx, escala) {
-    const cont = new THREE.Group(), bones = {}, suela = []
+// 2.1 Cara: los ojos son un dibujo 2D (assets/protagonista/Caras-transparente…png), como en el video de referencia: una sola hoja con
+//     todas las expresiones y la cara muestra un pedazo u otro (se corre la textura). La hoja es una cuadrícula de 3 × 4; cada expresión
+//     ocupa 210 × 140 px (las cejas y los dos ojos)
+const HOJA = { w: 840, h: 842, x0: 2, y0: 32, dx: 313.5, dy: 214.5, cw: 210, ch: 140 }
+export const EXPRESIONES = { // [fila, columna] en la hoja
+    normal: [0, 0], parpadeo: [0, 1], parpadeo2: [0, 2],                       // antes del sismo y final bueno · parpadeo · ojos cerrados tranquilos (dormida, feliz)
+    normalPost: [1, 0], susto: [1, 1], parpadeoLagrimas: [1, 2],             // después del sismo · susto y minijuegos (con lágrimas) · su parpadeo
+    nivel1: [2, 0], nivel2: [2, 1], nivel3: [2, 2],                          // ansiedad 1, 2 y 3 (la 3, con los ojos en espiral)
+    parpadeoAnsioso1: [3, 0], parpadeoAnsioso2: [3, 1]
+}
+const hojaCaras = new THREE.TextureLoader().load(encodeURI('assets/protagonista/Caras-transparente_Mesa de trabajo 1.png'))
+hojaCaras.colorSpace = THREE.SRGBColorSpace; hojaCaras.anisotropy = 4
+hojaCaras.repeat.set(HOJA.cw / HOJA.w, HOJA.ch / HOJA.h)
+const mostrar = (tex, nombre) => { const [f, c] = EXPRESIONES[nombre] ?? EXPRESIONES.normal; tex.offset.set((HOJA.x0 + c * HOJA.dx) / HOJA.w, 1 - (HOJA.y0 + f * HOJA.dy + HOJA.ch) / HOJA.h) }
+// La cara se pega a la forma de la cabeza: una malla de 24 × 16 que se proyecta desde el frente sobre la piel, un poquito por fuera. El pelo
+// queda encima (tapa las cejas y el borde de arriba de los ojos, como en los dibujos). Va en el hueso de la cabeza
+const CARA_ANCHO = 36, CARA_Y = 106 // en unidades del archivo: los ojos de lado a lado y su centro (la cabeza va de y 84 a 126). Antes 32 y 98.5: quedaban donde iría la boca
+function armarCara(mallas, cabeza, material) {
+    // solo los triángulos del frente de la cabeza (así los rayos son rápidos: el cuerpo entero tiene más de 100 000)
+    const tri = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3()
+    mallas.filter(m => m.name === 'Chibi').forEach(m => { // solo la piel: el pelo queda por encima de la cara (antes iba sobre el flequillo y parecía una calcomanía)
+        const g0 = m.geometry.clone().applyMatrix4(m.matrixWorld), g = g0.index ? g0.toNonIndexed() : g0, p = g.attributes.position
+        for (let i = 0; i < p.count; i += 3) {
+            a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2)
+            if (Math.min(a.y, b.y, c.y) > 80 && Math.max(a.y, b.y, c.y) < 122 && Math.min(a.z, b.z, c.z) > 0) tri.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z)
+        }
+    })
+    const sup = new THREE.BufferGeometry(); sup.setAttribute('position', new THREE.Float32BufferAttribute(tri, 3))
+    const blanco = new THREE.Mesh(sup, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }))
+    const g = new THREE.PlaneGeometry(CARA_ANCHO, CARA_ANCHO * HOJA.ch / HOJA.cw, 24, 16), p = g.attributes.position
+    const rayo = new THREE.Raycaster(), desde = new THREE.Vector3(), haciaAtras = new THREE.Vector3(0, 0, -1)
+    for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i) + CARA_Y
+        rayo.set(desde.set(x, y, 60), haciaAtras)
+        const z = rayo.intersectObject(blanco)[0]?.point.z ?? 15
+        p.setXYZ(i, x, y - JOINTS.cabeza[2], z + 0.35) // (relativo al hueso de la cabeza, que está en y 81)
+    }
+    g.computeVertexNormals()
+    const m = new THREE.Mesh(g, material); m.renderOrder = 2; cabeza.add(m)
+    return m
+}
+// los huesos (en la pose del archivo) dentro de cont
+function esqueleto(cont) {
+    const bones = {}
     NAMES.forEach(n => { const [p, x, y, z] = JOINTS[n], b = new THREE.Bone(); b.name = n; const q = p ? JOINTS[p] : [0, 0, 0, 0]; b.position.set(x - q[1], y - q[2], z - q[3]); bones[n] = b; if (p) bones[p].add(b) })
     cont.add(bones.raiz); cont.updateMatrixWorld(true)
-    const skeleton = new THREE.Skeleton(NAMES.map(n => bones[n]))
+    return { bones, skeleton: new THREE.Skeleton(NAMES.map(n => bones[n])) }
+}
+// la geometría de una malla del archivo, en unidades del archivo y con sus pesos (a qué huesos se pega cada vértice)
+function pesada(c) {
+    const g = c.geometry.clone().applyMatrix4(c.matrixWorld), pos = g.attributes.position, n = pos.count
+    // Piezas reflejadas en Blender (escala negativa, como un mechón del pelo): al pasarlas al modelo quedan con las caras al revés y
+    // se iluminaban por dentro (se veían más oscuras). Se invierte el orden de sus triángulos
+    if (c.matrixWorld.determinant() < 0) {
+        if (g.index) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t } g.index.needsUpdate = true }
+        else Object.values(g.attributes).forEach(at => { const k = at.itemSize, a = at.array; for (let i = 0; i < at.count; i += 3) for (let j = 0; j < k; j++) { const t = a[(i + 1) * k + j]; a[(i + 1) * k + j] = a[(i + 2) * k + j]; a[(i + 2) * k + j] = t } at.needsUpdate = true })
+    }
+    const idx = new Uint16Array(n * 4), w = new Float32Array(n * 4)
+    for (let i = 0; i < n; i++) pesos(c.name, pos.getX(i), pos.getY(i), pos.getZ(i), idx, w, i * 4)
+    g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(w, 4))
+    return g
+}
+function armar(fbx, escala, matCara) {
+    const cont = new THREE.Group(), { bones, skeleton } = esqueleto(cont), suela = []
     fbx.updateMatrixWorld(true)
     const mallas = []; fbx.traverse(c => { if (c.isMesh) mallas.push(c) })
     mallas.forEach(c => {
-        const g = c.geometry.clone().applyMatrix4(c.matrixWorld), pos = g.attributes.position, n = pos.count
-        // Piezas reflejadas en Blender (escala negativa, como un mechón del pelo): al pasarlas al modelo quedan con las caras al revés y
-        // se iluminaban por dentro (se veían más oscuras). Se invierte el orden de sus triángulos
-        if (c.matrixWorld.determinant() < 0) {
-            if (g.index) { const a = g.index.array; for (let i = 0; i < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t } g.index.needsUpdate = true }
-            else Object.values(g.attributes).forEach(at => { const k = at.itemSize, a = at.array; for (let i = 0; i < at.count; i += 3) for (let j = 0; j < k; j++) { const t = a[(i + 1) * k + j]; a[(i + 1) * k + j] = a[(i + 2) * k + j]; a[(i + 2) * k + j] = t } at.needsUpdate = true })
-        }
-        const idx = new Uint16Array(n * 4), w = new Float32Array(n * 4)
-        for (let i = 0; i < n; i++) pesos(c.name, pos.getX(i), pos.getY(i), pos.getZ(i), idx, w, i * 4)
-        g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(idx, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(w, 4))
+        const g = pesada(c), pos = g.attributes.position, n = pos.count
         const sm = new THREE.SkinnedMesh(g, Array.isArray(c.material) ? c.material.map(materialDe) : materialDe(c.material))
         sm.frustumCulled = false; sm.bind(skeleton, new THREE.Matrix4()); cont.add(sm)
         // suela: unos cuantos vértices de la base de los zapatos (repartidos), para saber dónde queda el pie en cada pose (ver piso)
@@ -99,7 +151,8 @@ function armar(fbx, escala) {
     // enagua: un disco oscuro dentro de la falda, un poco arriba del borde, pegado a la cadera. Sin él, por debajo de la falda
     // se veía su interior claro (y a través de ella)
     const enagua = new THREE.Mesh(new THREE.CylinderGeometry(15.5, 15.5, 1.2, 24), new THREE.MeshStandardMaterial({ color: 0x15111c, roughness: 1 }))
-    enagua.scale.set(1.05, 1, 0.82); enagua.position.set(0, 37.5 - 42, -4.3); bones.cadera.add(enagua)
+    enagua.scale.set(1.05, 1, 0.82); enagua.position.set(0, 37.5 - 42, -4.3); if (mallas.some(c => c.name === 'Falda')) bones.cadera.add(enagua) // (solo con falda: los NPC con pantalón no la llevan)
+    if (matCara) armarCara(mallas, bones.cabeza, matCara)
     cont.scale.setScalar(escala)
     return { cont, bones, suela }
 }
@@ -148,6 +201,13 @@ function metaDe(meta, nombre, t, k, r = 0) { // k: 0 → 1 (al caminar, cuánto 
         meta.brazoI.x = meta.brazoD.x = -0.5; meta.antebrazoI.y = -1.0; meta.antebrazoD.y = 0.95 // y las manos sobre las piernas
         meta.cabeza.x = 0.1 + 0.04 * Math.sin(t * 0.7); meta.cabeza.y = 0.12 * Math.sin(t * 0.35)
         meta.pieI.x = meta.pieD.x = 0.35                                                      // los pies cuelgan relajados
+        // sentada suelta (la mayoría de los pasajeros): los brazos caen a los lados y las manos descansan junto a los muslos, sin
+        // llevarlas al frente (así no parece que cogieran algo)
+        if (k === 'suelta') {
+            meta.brazoI.z = -BRAZO_ABAJO - 0.2; meta.brazoD.z = BRAZO_ABAJO + 0.2
+            meta.brazoI.x = meta.brazoD.x = -0.12; meta.antebrazoI.y = -0.3; meta.antebrazoD.y = 0.3
+            mano(meta, 0.5)
+        }
     } else if (nombre === 'acostada') {
         // de lado (el lado "I" queda abajo, ver player.lieDown), encogida pero suelta, como alguien dormido: la espalda curva, la cabeza un
         // poco hacia el pecho, las rodillas dobladas (la de arriba más adelante), las manos juntas frente a la cara y los pies estirados
@@ -288,14 +348,22 @@ export const alturaPaso = (fase, k, r = 0) => k * (0.025 + 0.045 * r) * (Math.co
 
 // 4. Exportación: crearPersonaje(alto, archivos) → { grupo, versiones, cargar(clave), pose(nombre, t, k, r), aplicar(dt, rapido) }
 //    archivos: { normal: url, oscuro?: url } · cargar('normal') la carga (no se carga sola) · versiones.normal / .oscuro: el contenedor de cada modelo
-export function crearPersonaje(alto, archivos, alCargar) {
+//    cara: false para los que no llevan los ojos dibujados (los NPC)
+//    expresion(base, parpadeo): la cara de ahora y con cuál parpadea (cada 2.5 a 6 s, a veces dos seguidos) · fijarCara(nombre): la deja
+//    quieta en una expresión, sin parpadear (el debug); null la suelta
+export function crearPersonaje(alto, archivos, alCargar, { cara = true } = {}) {
     const grupo = new THREE.Group(), versiones = {}, rigs = [], escala = alto / MODELO
     const giro = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()])), meta = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()]))
     const fbx = new FBXLoader(), pedidas = {}, punto = new THREE.Vector3(), inv = new THREE.Matrix4()
+    // la cara: una copia de la hoja para cada personaje (comparten la imagen, pero cada uno muestra su propia expresión)
+    const tex = cara ? hojaCaras.clone() : null
+    const matCara = cara ? new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0x555555, transparent: true, alphaTest: 0.08, depthWrite: false, roughness: 0.8, // (un poco de brillo propio: con la luz se veían muy oscuros)
+         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }) : null
+    let expr = 'normal', parp = 'parpadeo', fija = null, proximo = 2 + Math.random() * 3, cerrada = 0, mostrada = '', cual = '' // cual: el parpadeo de esta vez (si hay varios posibles, uno al azar)
     const cargar = (clave) => { // cada versión se carga una sola vez, cuando se pide · devuelve una promesa que se cumple al estar lista
         if (!archivos[clave]) return Promise.resolve()
         return pedidas[clave] ||= new Promise((listo) => fbx.load(archivos[clave], (o) => {
-            const r = armar(o, escala); versiones[clave] = r.cont; rigs.push(r); grupo.add(r.cont)
+            const r = armar(o, escala, matCara); versiones[clave] = r.cont; rigs.push(r); grupo.add(r.cont)
             if (clave !== 'normal') r.cont.visible = false
             alCargar?.(clave, r.cont); listo()
         }, undefined, () => listo()))
@@ -311,10 +379,51 @@ export function crearPersonaje(alto, archivos, alCargar) {
             let min = Infinity; for (const [sm, i] of r.suela) { sm.getVertexPosition(i, punto); punto.applyMatrix4(sm.matrixWorld).applyMatrix4(inv); if (punto.y < min) min = punto.y }
             return min
         },
+        expresion(base, parpadeo = null) { expr = base; parp = parpadeo },
+        fijarCara(nombre) { fija = nombre },
+        get cara() { return mostrada },
         aplicar(dt, rapido = 10) { // rapido: qué tan rápido va cada hueso hacia su pose (más alto = más brusco)
             const f = Math.min(1, dt * rapido)
             NAMES.forEach(n => giro[n].lerp(meta[n], f))
             rigs.forEach(r => NAMES.forEach(n => r.bones[n].rotation.set(giro[n].x, giro[n].y, giro[n].z)))
+            if (!tex) return
+            // parpadeo: los ojos se cierran 0.13 s; a veces parpadea dos veces seguidas
+            if ((proximo -= dt) <= 0) { cerrada = 0.13; cual = Array.isArray(parp) ? parp[Math.floor(Math.random() * parp.length)] : parp; proximo = Math.random() < 0.2 ? 0.28 : 2.5 + Math.random() * 3.5 }
+            cerrada -= dt
+            const ahora = fija ?? (cerrada > 0 && parp ? cual : expr)
+            if (ahora !== mostrada) { mostrada = ahora; mostrar(tex, ahora) }
+        }
+    }
+}
+
+// 5. Extras (los NPC de assets/npc): el mismo cuerpo base de Gabriela con otra ropa, todo negro (siluetas). Son muchos, así que cada archivo
+//    se carga y se pesa UNA vez y todas sus copias comparten la geometría (juntada en una sola malla: un solo dibujo por persona); cada
+//    copia solo tiene su propio esqueleto, para poder caminar o sentarse por su cuenta. Llevan los ojos blancos de las siluetas de antes
+//    crearExtras(alto, urls) → { listo: promesa, nueva(i) → { cont, pose(nombre, t, k, r), aplicar(dt), cabeza } } (i: cuál archivo)
+const negro = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.9 }), blanco = new THREE.MeshBasicMaterial({ color: 0xffffff })
+const ojoExtra = new THREE.SphereGeometry(1, 10, 8)
+export function crearExtras(alto, urls) {
+    const escala = alto / MODELO, formas = []
+    const listo = Promise.all(urls.map((u, i) => new FBXLoader().loadAsync(u).then(o => {
+        o.updateMatrixWorld(true)
+        const partes = []; o.traverse(c => { if (!c.isMesh) return; let g = pesada(c); if (g.index) g = g.toNonIndexed(); Object.keys(g.attributes).forEach(k => { if (!['position', 'normal', 'skinIndex', 'skinWeight'].includes(k)) g.deleteAttribute(k) }); g.clearGroups(); partes.push(g) })
+        formas[i] = mergeGeometries(partes)
+    }).catch(() => {})))
+    return {
+        listo,
+        nueva(i) {
+            const forma = formas[i % formas.length] ?? formas.find(Boolean); if (!forma) return null
+            const cont = new THREE.Group(), { bones, skeleton } = esqueleto(cont)
+            const sm = new THREE.SkinnedMesh(forma, negro); sm.bind(skeleton, new THREE.Matrix4()); cont.add(sm)
+            sm.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 70, 0), 95) // (fija: calcularla con los huesos en cada cuadro es caro) · así los que no se ven no se dibujan
+            ;[-1, 1].forEach(s => { const e = new THREE.Mesh(ojoExtra, blanco); e.scale.set(2.4, 4.8, 1.2); e.position.set(s * 8, 103.5 - JOINTS.cabeza[2], 19.4); bones.cabeza.add(e) }) // ojos blancos: óvalos largos (antes puntitos), a la altura de los de Gabriela
+            cont.scale.setScalar(escala)
+            const giro = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()])), meta = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()]))
+            return {
+                cont, cabeza: bones.cabeza,
+                pose(nombre, t, k = 1, r = 0) { metaDe(meta, nombre, t, k, r); codos(meta) },
+                aplicar(dt, rapido = 10) { const f = Math.min(1, dt * rapido); NAMES.forEach(n => { giro[n].lerp(meta[n], f); bones[n].rotation.set(giro[n].x, giro[n].y, giro[n].z) }) }
+            }
         }
     }
 }

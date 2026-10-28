@@ -11,15 +11,22 @@ import * as THREE from 'three'
 import { spaces, walkableIn, SEATS, SEAT_Y, MOM_SPOT, DRIVER_SEAT, STREET_X0, SEGS, ROUTE_LEN, routePoint, GHOSTS } from './environment.js'
 import { CONFIG, runtime } from './config.js'
 import { player } from './player.js'
+import { crearExtras, alturaPaso } from './personaje.js'
 
 // 1. Estado y modelo del NPC
 export const npcState = { near: 0, bumps: 0, calms: 0 } // near = gente cerca del personaje · bumps = choques acumulados · calms = alucinaciones tocadas
 const black = new THREE.MeshStandardMaterial({ color: 0x0d0d10 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff })
 const bodyG = new THREE.ConeGeometry(0.42, 1.3, 12), headG = new THREE.SphereGeometry(0.38, 14, 10), eyeG = new THREE.SphereGeometry(0.075, 8, 6)
-const make = () => { // la cabeza y los ojos van en su propio grupo para poder girar la cabeza (sismo)
-    const g = new THREE.Group(), b = new THREE.Mesh(bodyG, black), hg = new THREE.Group(), h = new THREE.Mesh(headG, black); b.position.y = 0.65; hg.position.y = 1.5; hg.add(h)
-    ;[-0.14, 0.14].forEach(x => { const e = new THREE.Mesh(eyeG, white); e.scale.set(1, 1.4, 0.5); e.position.set(x, 0.05, 0.34); hg.add(e) })
-    g.add(b, hg); g.userData.head = hg; return g
+// Las personas son los modelos de assets/npc (tres variantes: Extra1, Extra2 y Extra3), siluetas negras con el mismo cuerpo de Gabriela
+// y su mismo esqueleto (personaje.js, crearExtras): caminan, esperan de pie o van sentadas con las mismas poses que ella.
+// g.userData.head: el giro extra de la cabeza (en el sismo la mueven de un lado a otro; después del sismo te miran). Se suma al hueso
+// de la cabeza después de la pose. Mientras cargan los modelos no se ve nadie (cargan al abrir la página, antes de llegar a la calle)
+const EXTRAS = crearExtras(1.8, ['assets/npc/Extra1.fbx', 'assets/npc/Extra2.fbx', 'assets/npc/Extra3.fbx'])
+let variante = 0
+const make = () => {
+    const g = new THREE.Group(), v = variante++ % 3; g.userData.head = new THREE.Object3D()
+    EXTRAS.listo.then(() => { const rig = EXTRAS.nueva(v); if (!rig) return; g.add(rig.cont); g.userData.rig = rig })
+    return g
 }
 
 // 2. Creación de NPCs: peatones (en las dos calles), gente en el paradero, pasajeros sentados y conductor
@@ -50,10 +57,10 @@ for (let i = 0; i < CONFIG.npcs.street; i++) {
 const BX = CONFIG.world.busInteriorX
 SEATS.sort(() => Math.random() - 0.5).slice(0, CONFIG.npcs.bus).forEach(s => {
     // un poco hacia el frente del cojín (como Gabriela al sentarse): en el centro, el cuerpo atravesaba el espaldar de las bancas largas
-    s.taken = true; const g = make(); g.scale.setScalar(0.85); g.position.set(s.x + Math.sin(s.face) * 0.2, SEAT_Y, s.z + Math.cos(s.face) * 0.2); g.rotation.y = s.face
-    add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'seated', ph: r(0, 6), y: SEAT_Y })
+    s.taken = true; const g = make(); const ad = s.adelante ?? 0.1; g.position.set(s.x + Math.sin(s.face) * ad, s.y ?? SEAT_Y, s.z + Math.cos(s.face) * ad); g.rotation.y = s.face
+    add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'seated', ph: r(0, 6), y: (s.y ?? SEAT_Y) - 0.46, suelta: Math.random() < 0.8 }) // (como Gabriela sentada: la cadera queda sobre el cojín)
 })
-{ const g = make(); g.scale.setScalar(0.85); g.position.set(DRIVER_SEAT.x, SEAT_Y, DRIVER_SEAT.z); g.rotation.y = Math.PI / 2; add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'driver', ph: 0, y: SEAT_Y }) } // conductor, sentado en su puesto del modelo
+{ const g = make(); g.position.set(DRIVER_SEAT.x, SEAT_Y, DRIVER_SEAT.z); g.rotation.y = Math.PI / 2; add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'driver', ph: 0, y: SEAT_Y - 0.46 }) } // conductor, sentado en su puesto del modelo
 
 // 3. Mamá: en la cocina, te mira cuando estás cerca y se mueve un poco al hablar (su colisión está en environment.js)
 // Es una silueta negra como los demás NPCs (la ansiedad no deja ver a los otros como personas), pero conserva
@@ -188,10 +195,19 @@ export function updateNpcs(dt, t) {
                 if (blocked) { if (!n.turnCool) { n.dir *= -1; n.turnCool = 0.8 } }
                 else if (free(n, nx, nz) && v > ro.min && v < ro.max) { p.x = nx; p.z = nz } else n.dir *= -1 // el escenario lo frena: da la vuelta
                 n.g.rotation.y = alongX ? (n.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (n.dir > 0 ? 0 : Math.PI)
-                p.y = Math.abs(Math.sin(t * 7 + n.ph)) * 0.1
+                n.fase = (n.fase ?? n.ph) + dt * n.speed * 5.5 // el paso va con la velocidad de cada uno
+                p.y = alturaPaso(n.fase, 1)
             }
             if (n.vx || n.vz) { shove(n, n.vx * dt, n.vz * dt); n.vx *= Math.max(0, 1 - dt * 4); n.vz *= Math.max(0, 1 - dt * 4); if (Math.hypot(n.vx, n.vz) < 0.05) n.vx = n.vz = 0 }
         } else p.y = n.y + (n.kind === 'seated' ? Math.sin(t * 1.5 + n.ph) * 0.015 : 0)
+    }
+    for (const n of npcs) { // poses: caminando, sentados o de pie (el conductor también va sentado)
+        const rig = n.g.userData.rig; if (!rig || n.sp !== sp) continue
+        const camina = n.kind === 'walker' && n.state !== 'stare' && !fin
+        // sentados: la mayoría con los brazos sueltos (n.suelta); el conductor y unos pocos, con las manos al frente
+        rig.pose(n.kind === 'seated' || n.kind === 'driver' ? 'sentada' : camina ? 'caminar' : 'quieta', camina ? n.fase ?? 0 : t + (n.ph || 0), n.suelta ? 'suelta' : 1)
+        rig.aplicar(dt)
+        const hd = n.g.userData.head.rotation; rig.cabeza.rotation.x += hd.x; rig.cabeza.rotation.y += hd.y; rig.cabeza.rotation.z += hd.z
     }
     if (fin) { npcState.near = 0; return }
     for (let i = 0; i < npcs.length; i++) for (let j = i + 1; j < npcs.length; j++) { // entre NPCs: no se atraviesan

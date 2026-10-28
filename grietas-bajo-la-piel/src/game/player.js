@@ -63,6 +63,7 @@ let gesto = null // coger algo: { t, dur, alMedio, alFinal } (player.coger)
 let comiendo = false // desayunando (player.comer)
 let salto = null // sobresalto: { t, x0, z0, dx, dz } (player.sobresalto)
 let trasSalto = 0 // después de caer se queda quieta un momento (mirando) antes de la pose de miedo
+let quieta = 0; const DEMORA = 20 // segundos sin moverse (explorando): si te demoras mucho, se le salen las lágrimas
 const PISO = { HOUSE: 0.03, HOME: 0.02, BUS: 0.005, STREET: 0 } // altura del piso de cada espacio (medida en los modelos): antes se hundía en el cuarto y la sala
 
 // Acostada sobre la cama (la cama está contra la pared del fondo; la cabeza va hacia la almohada)
@@ -165,6 +166,19 @@ export const player = {
         else if (comiendo) prota.pose(sitting ? 'comerSentada' : 'comer', t) // en la mesa come sentada
         else prota.pose(lying ? 'acostada' : sitting ? 'sentada' : andar > 0.05 ? 'caminar' : susto > 0.05 ? 'miedo' : 'quieta', andar > 0.05 ? fase : t, andar > 0.05 ? andar : susto, correr)
         if (runtime.tambaleo === undefined && !lying && group.rotation.z !== 0) group.rotation.z = 0 // terminó el tambaleo: vuelve a quedar derecha
+        // Cara (personaje.js, EXPRESIONES): acostada, siempre con los ojos cerrados (antes del sismo tranquila; después, con lágrimas) · con un
+        // susto, en un minijuego o al fallar, asustada (parpadea con los parpadeos ansiosos 1 y 2) · si te demoras mucho quieta, con lágrimas ·
+        // antes del sismo y en el final bueno, la normal · después del sismo, según el nivel de ansiedad (0, 1, 2 o 3, el de la espiral)
+        const nivel = runtime.levelVis ?? -1
+        quieta = moving || runtime.state !== 'EXPLORATION' ? 0 : quieta + dt
+        if (lying) prota.expresion(runtime.postQuake ? 'parpadeoLagrimas' : 'parpadeo2')
+        else if (salto || susto > 0.5 || ['BREATHING', 'FAILURE', 'QUAKE'].includes(runtime.state)) prota.expresion('susto', ['parpadeoAnsioso1', 'parpadeoAnsioso2'])
+        else if (quieta > DEMORA) prota.expresion('susto', 'parpadeoLagrimas')
+        else if (nivel < 0) prota.expresion('normal', 'parpadeo')
+        else if (nivel < 0.75) prota.expresion('normalPost', 'parpadeo')
+        else if (nivel < 1.75) prota.expresion('nivel1', 'parpadeoAnsioso1')
+        else if (nivel < 2.75) prota.expresion('nivel2', 'parpadeoAnsioso2')
+        else prota.expresion('nivel3', 'parpadeoAnsioso2')
         prota.aplicar(dt, salto ? 22 : 10) // el salto es rápido: los huesos siguen la pose sin retraso
         const oscuro = (runtime.levelVis ?? -1) > 2.75 // nivel 3 de ansiedad: la versión oscura del modelo (como el resto de los modelos)
         if ((runtime.levelVis ?? -1) > 2) prota.cargar('oscuro') // se prepara un poco antes de necesitarla
