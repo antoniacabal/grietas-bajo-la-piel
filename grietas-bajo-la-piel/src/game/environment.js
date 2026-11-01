@@ -434,17 +434,17 @@ box(FX1 - FX0 - 1.4, 0.9, FZ1 - FZ0 - 1.4, (FX0 + FX1) / 2, -1.1, (FZ0 + FZ1) / 
 // Piso de la calle: baldosas (assets/calle/decoraciones/floor_tiles_18, copias de 1k: las de 2k pesaban 9 MB). La textura se repite cada
 // BALDOSA metros, medida sobre el mundo (cada caja ajusta sus coordenadas a su tamaño): así no se estira en los tramos largos. El color
 // del material la tiñe: blanco en calma (sus colores tal cual) y el de tensión de la calle con la ansiedad
-// (CLARO: un poco más que blanco: con la luz cálida de la calle la textura se veía oscura y verdosa)
-const CLARO = new THREE.Color(1.35, 1.35, 1.35)
 const BALDOSA = 6, texCalle = (n, srgb) => { const t = new THREE.TextureLoader().load(`assets/calle/decoraciones/floor_tiles_18_2k/floor_tiles_18_${n}_1k.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t }
-const pisoCalle = mat(CLARO, '#71708A', { map: texCalle('basecolor', true), normalMap: texCalle('normal_gl'), roughness: 0.85 })
+// (versión suave de la textura: 35 % de ella sobre el beige de la calle, y sin relieve: así no se ve tan marcada y queda plana como el resto
+// del juego. Antes iba completa, con su mapa de normales y aclarada: se veía muy distinta al resto)
+const pisoCalle = mat('#FFFFFF', '#71708A', { map: texCalle('suave', true), roughness: 0.9 })
 const baldosas = (m) => { const p = m.geometry.parameters, uv = m.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * p.width / BALDOSA, uv.getY(i) * p.depth / BALDOSA); m.material = pisoCalle; return m }
 SEGS.forEach((s, i) => { // los cuatro tramos (el primero sigue detrás de la valla hasta el borde del campo)
     const r = ROADS[i].slice(); if (i === 0) r[0] = FX0 + 1
     baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05 + i * 0.002, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A')) // alturas apenas distintas: las esquinas no parpadean
 })
 // tramo de la calle eterna: se estira a lo largo (escala en z), así que lleva su propia copia de la textura y la repite según lo estirado
-const pisoExt = mat(CLARO, '#71708A', { map: texCalle('basecolor', true), normalMap: texCalle('normal_gl'), roughness: 0.85 })
+const pisoExt = mat('#FFFFFF', '#71708A', { map: texCalle('suave', true), roughness: 0.9 })
 const roadExt = baldosas(box(6, 0.1, 1, UX, -0.04, GATE, '#D8C8AE', '#71708A')); roadExt.material = pisoExt; roadExt.visible = false
 baldosas(box(PATH[1] - PATH[0], 0.06, PATH[3] - PATH[2], HOME_DOOR.x, -0.07, (PATH[2] + PATH[3]) / 2, '#D8C8AE', '#71708A')) // caminito de la casa de Gabriela
 // Andén de concreto a los lados de la calle, con pedazos de pasto cada tanto (SECTIONS: los que sirven para el Earthing)
@@ -946,7 +946,7 @@ function updateEndless(dt) {
     endK += (k - endK) * Math.min(1, dt * 0.8)
     ext = E.endless * endK
     uniG.position.z = UNI_Z - ext
-    roadExt.visible = ext > 0.05; roadExt.scale.z = Math.max(0.001, ext); roadExt.position.z = GATE - ext / 2; pisoExt.map.repeat.y = pisoExt.normalMap.repeat.y = Math.max(0.001, ext)
+    roadExt.visible = ext > 0.05; roadExt.scale.z = Math.max(0.001, ext); roadExt.position.z = GATE - ext / 2; pisoExt.map.repeat.y = Math.max(0.001, ext)
     EXT[2] = GATE - ext
     if (scene.background instanceof THREE.Color) scene.fog.color.copy(scene.background)
     if (endK > 0.01) { scene.fog.near = 26 + 40 * (1 - endK); scene.fog.far = scene.fog.near + 12 + 40 * (1 - endK) }

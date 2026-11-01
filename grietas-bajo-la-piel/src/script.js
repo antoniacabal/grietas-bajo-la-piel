@@ -224,9 +224,13 @@ async function iniciarMuestra() {
             })
             o.scale.setScalar(0.00036); o.position.set((-290 + 19) * SH, 0.995 + 39 * 0.00036, -0.25 + 5 * SH); cuarto.add(o)
             // prendido (como en el juego): la pantalla tiene luz propia y una luz pequeña encima ilumina un poco el escritorio
-            pintura.Pantalla?.emissive.set('#E4FFFF'); if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = 0.75
-            const luz = new THREE.PointLight('#E4FFFF', 1.4, 1.8, 2); luz.position.copy(o.position).y += 0.25; cuarto.add(luz)
+            pintura.Pantalla?.emissive.set('#E4FFFF')
+            luzCelular = new THREE.PointLight('#E4FFFF', 1.4, 1.8, 2); luzCelular.position.copy(o.position).y += 0.25; cuarto.add(luzCelular)
+            prenderCelular(!enGlitch)
         })
+        // en el glitch el celular se apaga (la pantalla deja de brillar y su luz se va); al volver a la calma se prende otra vez
+        let luzCelular = null
+        const prenderCelular = (si) => { if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = si ? 0.75 : 0; if (luzCelular) luzCelular.intensity = si ? 1.4 : 0 }
         new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
             cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender
@@ -606,7 +610,7 @@ async function iniciarMuestra() {
         const ciclo = tiempo % 7, dentro = ciclo > 5.2 && ciclo < 6.3                      // un segundo de cada siete
         const borde = ciclo < 5.45 || ciclo > 6.05, parpadeo = borde && Math.sin(tiempo * 60) > 0 // al entrar y al salir parpadea
         const glitch = dentro && (sinMovimiento || !parpadeo)
-        if (glitch !== tick.glitch) { tick.glitch = enGlitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.5 : 0.7; luzAmbiente.color.setHex(glitch ? FRIA : CALIDA); luzSol.color.setHex(glitch ? FRIA : CALIDA); contornos.forEach(l => { l.visible = glitch }) }
+        if (glitch !== tick.glitch) { tick.glitch = enGlitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.5 : 0.7; luzAmbiente.color.setHex(glitch ? FRIA : CALIDA); luzSol.color.setHex(glitch ? FRIA : CALIDA); contornos.forEach(l => { l.visible = glitch }); prenderCelular(!glitch) }
         luzTension.intensity = glitch ? 2.6 + Math.sin(tiempo * 40) * 0.8 : 0
         canvas.style.transform = glitch && !sinMovimiento ? `translate(${(Math.random() * 6 - 3).toFixed(1)}px, ${(Math.random() * 2 - 1).toFixed(1)}px)` : ''
         canvas.style.filter = glitch ? 'contrast(1.15) saturate(1.2)' : ''
