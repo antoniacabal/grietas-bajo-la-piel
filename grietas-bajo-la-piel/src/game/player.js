@@ -51,8 +51,9 @@ group.traverse(o => o.layers.set(1)) // capa propia: en el nivel 3 de ansiedad s
 group.position.set(CONFIG.player.startX, 0, CONFIG.player.startZ)
 
 // El modelo se carga cuando main.js lo pide (player.cargarModelo): armarlo toma un momento y, si pasaba al abrir la página, trababa la
-// tarjeta de "10 de agosto". La versión oscura se carga solo cuando hace falta (nivel 3 de ansiedad)
-const prota = crearPersonaje(ALTO, { normal: 'assets/protagonista/Personaje.fbx', oscuro: 'assets/protagonista/Personaje_Oscuro.fbx' }, (clave, cont) => {
+// tarjeta de "10 de agosto". La versión oscura se carga solo cuando hace falta (nivel 3 de ansiedad). La de pijama (main.js: desde que se
+// despierta hasta que se viste en el armario) se carga con la normal: el día empieza con ella
+const prota = crearPersonaje(ALTO, { normal: 'assets/protagonista/Personaje.fbx', oscuro: 'assets/protagonista/Personaje_Oscuro.fbx', pijama: 'assets/protagonista/Personaje_pijama.fbx' }, (clave, cont) => {
     cont.traverse(o => o.layers.set(1)); if (clave === 'normal') temp.visible = false
 })
 group.add(prota.grupo)
@@ -77,11 +78,13 @@ const down = (...c) => c.some(k => keys.has(k))
 // 4. API pública (player)
 let mode = 'free' // free | stop | agitated | guided | calm
 let lying = false, sitting = false, seatLocked = false // seatLocked: antes del sismo, una vez sentada en el MIO no se levanta
+let enPijama = true
 export const player = {
     group,
     setMode(m) { mode = m },
     setBackpack(v) { conMaleta = v; backpack.visible = v }, // maleta a la espalda
-    cargarModelo() { return prota.cargar('normal') }, // devuelve una promesa (main.js espera el modelo antes de la tarjeta "10 de agosto")
+    cargarModelo() { return Promise.all([prota.cargar('normal'), prota.cargar('pijama')]) }, // devuelve una promesa (main.js espera el modelo antes de la tarjeta "10 de agosto")
+    setPijama(v) { enPijama = v }, // con pijama (antes de vestirse) o con la ropa del día
     // gesto de coger algo en (x, z): se voltea hacia el objeto, estira la mano y lo recoge. alMedio: cuando la mano llega · alFinal: al terminar
     coger(x, z, alMedio, alFinal) {
         const r = group.rotation, want = Math.atan2(x - group.position.x, z - group.position.z)
@@ -182,7 +185,8 @@ export const player = {
         prota.aplicar(dt, salto ? 22 : 10) // el salto es rápido: los huesos siguen la pose sin retraso
         const oscuro = (runtime.levelVis ?? -1) > 2.75 // nivel 3 de ansiedad: la versión oscura del modelo (como el resto de los modelos)
         if ((runtime.levelVis ?? -1) > 2) prota.cargar('oscuro') // se prepara un poco antes de necesitarla
-        const { normal, oscuro: osc } = prota.versiones; if (normal && osc) { normal.visible = !oscuro; osc.visible = oscuro }
+        const { normal, oscuro: osc, pijama } = prota.versiones, cual = oscuro && osc ? osc : enPijama && pijama ? pijama : normal // (con pijama también; la oscura gana en el nivel 3)
+        ;[normal, osc, pijama].forEach(v => { if (v) v.visible = v === cual })
         if (!lying && !sitting) {
             const q = group.position, f = pullBack(q.x, q.z)
             if (f) { const dx = f.x - q.x, dz = f.z - q.z, d = Math.hypot(dx, dz), st = Math.min(d, 4 * dt); if (d > 1e-6) { q.x += dx / d * st; q.z += dz / d * st } }

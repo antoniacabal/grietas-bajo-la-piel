@@ -20,7 +20,7 @@ import { CONFIG, runtime } from './config.js'
 import { sm } from './stateMachine.js'
 import { renderer, scene, canvas, renderSharp } from './scene.js'
 import { camera, updateCamera } from './camera.js'
-import { DINING_SEAT } from './environment.js'
+import { DINING_SEAT, setDesayuno } from './environment.js'
 import { modelosListos, updateEnvironment, props, uniBus, resetProps, marker, setSpace, SEATS, SEGS, atUniversity, nearUniversity, endless, HOME_DOOR, STREET_X0, ROUTE_LEN, routePoint, nearestSeg, scareBuilding, DOORS, SPAWN, BED_LIE, BUS_DOORS, busExits } from './environment.js'
 import { player } from './player.js'
 import { breathing } from './breathing.js'
@@ -31,6 +31,7 @@ import { initDebug } from './debug.js'
 import { updateNpcs, npcState, mom } from './npcs.js'
 import { haptics } from './haptics.js'
 import { INSTRUCCIONES } from './instrucciones.js'
+import { crearOclusion, conOclusion } from './oclusion.js'
 import './touch.js'
 
 // 1. Constantes y estado
@@ -58,7 +59,7 @@ const current = () => !up ? 'cama' : !dressed ? 'armario' : pending().length ? '
 
 function startRoutine(post) {
     resetProps(); resetBreakfast()
-    up = dressed = down = momDone = ate = out = arrived = busy = busAsked = braked = busDone = false; got.clear(); resetScare(); player.setBackpack(false)
+    up = dressed = down = momDone = ate = out = arrived = busy = busAsked = braked = busDone = false; got.clear(); resetScare(); player.setBackpack(false); player.setPijama(true) // cada día empieza en pijama
     introEarth = false; progressMax = 0; runtime.asustada = false; runtime.postQuake = post; runtime.healed = false; runtime.envProgress = post ? 0 : 1; runtime.anxiety = post ? 0.08 : 0; runtime.stress = 0
     houseCrisis = ['armario', ...ITEMS][Math.floor(Math.random() * 3)]; earthRun = 0; momAsked.clear(); houseT = 0
     setSpace('HOUSE'); runtime.nextCrisis = C.first; player.lieDown(); CONFIG.camera.x = W.houseCenterX; CONFIG.camera.z = 0
@@ -152,7 +153,7 @@ function maybeHouseCrisis(id) {
 function dress() { // la acción no se ve: la pantalla funde a negro mientras te cambias
     busy = true; player.setMode('stop')
     ui.fade(1, 0.5, () => {
-        ui.say(runtime.postQuake ? 'Te cuesta decidir qué ponerte...' : 'Te vistes para ir a la universidad.')
+        ui.say(runtime.postQuake ? 'Te cuesta decidir qué ponerte...' : 'Te vistes para ir a la universidad.'); player.setPijama(false) // (con la pantalla en negro: al volver ya tiene la ropa del día)
         gsap.delayedCall(runtime.postQuake ? 1.8 : 0.9, () => ui.fade(0, 0.5, () => { busy = false; dressed = true; if (runtime.state === 'EXPLORATION') player.setMode('free'); maybeHouseCrisis('armario') }))
     })
 }
@@ -185,10 +186,9 @@ function talkToMom() {
     busy = true; player.setMode('stop'); ui.say(''); mom.setTalking(true); faceMom()
     ui.talk('Mamá', momLines().hello, { onEnd: () => { mom.setTalking(false); momDone = true; freeAgain() } })
 }
-// Después del sismo mamá está pendiente: si pierdes un minijuego en la sala, o si te quedas mucho rato en el cuarto, te pregunta si estás
-// bien. Hablar con ella te baja un nivel de ansiedad (una vez por cada motivo en cada día)
+// Después del sismo mamá está pendiente: si te quedas mucho rato en el cuarto, te pregunta desde abajo si estás bien (una vez por día).
+// Hablar con ella te baja un nivel de ansiedad. (En la sala, al perder un minijuego, ya no pregunta)
 const MOM_CHECK = {
-    perdiste: { who: 'Mamá', lines: ['Gabriela... ¿te sientes bien? Te noto pálida.', [ME, 'Es que... por un momento sentí que todo se movía otra vez.'], 'Ven, mírame. Respira conmigo, despacio... eso es.', 'Aquí estás segura. El piso está quieto y yo estoy contigo.'] },
     cuarto: { who: 'Mamá', lines: ['Gabriela, mi amor... ¿estás bien? Llevas un buen rato allá arriba.', [ME, 'Sí, ma... es que hoy me está costando un poquito.'], 'Tranquila, sin afán. Aquí te espero; baja cuando estés lista.'] }
 }
 let momAsked = new Set(), houseT = 0 // houseT: cuánto llevas en el cuarto (después de levantarte)
@@ -196,22 +196,19 @@ function momCheck(kind, tries = 0) {
     if (!runtime.postQuake || momAsked.has(kind) || runtime.sandbox) return
     if (busy || runtime.state !== 'EXPLORATION') { if (tries < 8) gsap.delayedCall(1, () => momCheck(kind, tries + 1)); return } // espera a que termine lo que estás haciendo
     momAsked.add(kind); busy = true; player.setMode('stop'); ui.say('')
-    const near = kind === 'perdiste'; if (near) { mom.setTalking(true); faceMom() }
     ui.talk(MOM_CHECK[kind].who, MOM_CHECK[kind].lines, { onEnd: () => {
-        if (near) mom.setTalking(false)
         runtime.failStreak = Math.max(0, (runtime.failStreak || 0) - 1); runtime.glitch = runtime.failStreak // un nivel menos de ansiedad
         gsap.to(runtime, { anxiety: C.baseline + 0.2 * runtime.failStreak, stress: 0, duration: 4 })
         freeAgain()
     } })
 }
-const FOOD = () => props.desayuno.mesh.children.slice(1, 3) // arepa y huevo (el plato y la taza se quedan)
-function resetBreakfast() { FOOD().forEach(m => m.scale.setScalar(1)) }
+function resetBreakfast() { setDesayuno('lleno') }
 // Desayunar: Gabriela se sienta en la silla frente al plato (con un fundido corto) y se ve cómo la comida va desapareciendo a mordiscos;
 // después del sismo solo come un poco. Al terminar se para detrás de la silla y mamá se despide. Es su propia escena: Saltar (en los
 // diálogos) no la adelanta
 function eat() {
     busy = true; player.setMode('stop'); ui.cancelSkip()
-    const post = runtime.postQuake, left = post ? 0.55 : 0.001, [arepa, egg] = FOOD()
+    const post = runtime.postQuake
     ui.fade(1, 0.35, () => {
         player.sit(DINING_SEAT, true); player.comer(true) // la mano lleva bocados a la boca y mastica (personaje.js, pose comerSentada)
         ui.fade(0, 0.4, () => {
@@ -219,9 +216,9 @@ function eat() {
             gsap.timeline({ onComplete: () => {
                 ate = true; ui.say(post ? 'Solo logras comer un poco.' : 'Te comiste todo el desayuno.')
                 gsap.delayedCall(0.8, () => { player.comer(false); player.unsit({ x: DINING_SEAT.x + 0.65, z: DINING_SEAT.z }); player.group.rotation.y = Math.PI / 2; gsap.delayedCall(0.6, momBye) }) // se para al lado de la silla (del lado de la punta de la mesa)
-            } })
-                .to(arepa.scale, { x: left, y: left, z: left, duration: post ? 2.6 : 1.8, ease: 'steps(4)' }, 0.4)
-                .to(egg.scale, { x: left, y: left, z: left, duration: post ? 1.4 : 0.9, ease: 'steps(2)' }, '+=0.3')
+            } }) // el plato se va vaciando (los tres modelos del desayuno); después del sismo se queda a medio comer
+                .call(() => setDesayuno('medio'), null, post ? 2.6 : 1.6)
+                .call(() => setDesayuno(post ? 'medio' : 'vacio'), null, post ? 3.4 : 3.2)
         })
     })
 }
@@ -462,7 +459,6 @@ breathing.init({
         if (runtime.failStreak >= CONFIG.maxFailures) return sm.go('FAILURE')
         if (bus && runtime.postQuake) return void gsap.delayedCall(1.6, () => { if (runtime.state === 'BREATHING') sm.go('BUS_LOST') }) // en el MIO: sigues en el MIO
         gsap.delayedCall(2, () => { if (runtime.state === 'BREATHING') sm.go('EXPLORATION') })
-        if (runtime.space === 'HOME') gsap.delayedCall(2.8, () => momCheck('perdiste')) // en la sala, mamá lo nota
     }
 })
 
@@ -494,6 +490,10 @@ initDebug({ jumpTo, playGame, forceCrisis, resetTutorials: () => seenTutorials.c
 
 // 11. Bucle principal
 const clock = new THREE.Clock()
+// dibujar: con oclusión ambiental en computador (oclusion.js: rincones y uniones un poco más oscuros); en celular, como siempre
+const oclusion = conOclusion() ? crearOclusion(renderer, scene, camera, { radio: 0.6, intensidad: 0.7 }) : null
+if (oclusion) addEventListener('resize', () => oclusion.tamano(innerWidth, innerHeight))
+const dibujar = () => oclusion ? oclusion.render() : renderer.render(scene, camera)
 // Más gente cerca, más ansiedad y choques con NPCs = más probabilidad de crisis (el temporizador corre más rápido)
 let lastBumps = 0, lastCalms = 0, crowdSaid = -99, crowdHits = 0 // lastCalms: alucinaciones tocadas · crowdHits: choques con gente desde el último "nivel" de ansiedad
 const CALMAS = ['Lo tocas... y no hay nada. Estás aquí.', 'No era real. Respiras un poco mejor.', 'Ahí no hay nadie. Tu cuerpo lo entiende.'] // frases al tocar una alucinación
@@ -502,7 +502,7 @@ const crisisMult = () => Math.min(2.5, 1 + npcState.near * 0.35 + runtime.anxiet
 let lastState = '', stateT = 0, breathIdle = 0 // breathIdle: segundos en BREATHING con el minijuego ya terminado (no desde que empezó)
 const blockMsg = (t, text) => { if (t - doorMsgT > 2.5) { doorMsgT = t; ui.say(text) } }
 function skipRoom() { // ?debug: lo que faltaba en el cuarto se da por hecho
-    up = dressed = true; ITEMS.forEach(i => { got.add(i); props[i].mesh.visible = false }); player.setBackpack(true)
+    up = dressed = true; ITEMS.forEach(i => { got.add(i); props[i].mesh.visible = false }); player.setBackpack(true); player.setPijama(false)
 }
 const onArrow = (r) => player.x > r[0] - 0.15 && player.x < r[1] + 0.15 && player.z > r[2] - 0.15 && player.z < r[3] + 0.15
 function doors(t) { // flechas del piso (y el caminito de la calle): pisarlas cambia de espacio si ya hiciste lo necesario; si no, no te deja pasar (en ?debug siempre se puede)
@@ -516,7 +516,7 @@ function doors(t) { // flechas del piso (y el caminito de la calle): pisarlas ca
     if (sp === 'HOME' && onArrow(DOORS.calle)) {
         if (current() === 'salida' || out) exitHouse()
         else if (runtime.sandbox) { momDone = ate = true; props.desayuno.mesh.visible = false; exitHouse() }
-        else { armed = false; blockMsg(t, !momDone ? 'Mamá te está esperando en la cocina.' : !ate ? 'No has desayunado.' : 'No te has despedido de mamá.') }
+        else { armed = false; if (t - doorMsgT > 2.5) { doorMsgT = t; ui.aviso(!momDone ? 'Primero saluda a mamá: te está esperando en la cocina.' : !ate ? 'No has desayunado.' : 'No te has despedido de mamá.') } } // (aviso enano, como un diálogo chiquito)
     }
     if (sp === 'HOME' && down && onArrow(DOORS.subir)) goUp() // la flecha de la sala que sube al cuarto
     if (sp === 'STREET' && out && player.z < HOME_DOOR.z + 1.75 && Math.abs(player.x - HOME_DOOR.x) < 0.8) goHome() // al final del caminito: entras a la casa
@@ -595,7 +595,7 @@ let juegoT = 0 // tiempo del juego (no corre en pausa)
 const frame = () => {
     // en pausa (salida rápida o un pop-up) TODO se detiene: solo se vuelve a dibujar el mismo cuadro. Antes el reloj seguía y Gabriela,
     // la gente, las fallas y el temblor de la cámara se seguían moviendo (el audio y GSAP ya se pausaban en ui.js)
-    if (runtime.paused) { clock.getDelta(); ui.updateOverlay(); renderer.render(scene, camera); renderSharp(camera, runtime.sharpPlayer); return }
+    if (runtime.paused) { clock.getDelta(); ui.updateOverlay(); dibujar(); renderSharp(camera, runtime.sharpPlayer); return }
     const dt = Math.min(clock.getDelta(), 0.1)
     if (runtime.postQuake && up && runtime.space === 'HOUSE' && runtime.state === 'EXPLORATION' && !busy && (houseT += dt) > 35) momCheck('cuarto') // 35 s en el cuarto: mamá pregunta desde abajo
     const t = (juegoT += dt), sp = runtime.space, explore = dt > 0 && runtime.state === 'EXPLORATION'
@@ -668,7 +668,8 @@ const frame = () => {
     breathing.update(dt); player.update(dt, t); updateNpcs(dt, t); updateAnxiety(dt); updateEnvironment(dt, player.x, player.z)
     // Cámara: fija dentro de la casa y del MIO; en la calle sigue al personaje (también cuando la calle gira)
     const s2 = runtime.space
-    if (focus === 'player' || runtime.zoomJugador) updateCamera(t, dt, player.x, player.z) // (zoomJugador: Reconstruir la gravedad se acerca a Gabriela)
+    if (runtime.vistaMapa) updateCamera(t, dt, runtime.vistaMapa.x, runtime.vistaMapa.z) // (debug: la calle entera vista desde arriba)
+    else if (focus === 'player' || runtime.zoomJugador) updateCamera(t, dt, player.x, player.z) // (zoomJugador: Reconstruir la gravedad se acerca a Gabriela)
     else if (focus) updateCamera(t, dt, focus.x, focus.z)
     else if (s2 === 'STREET' && breathing.active && runtime.techId === 'earth') updateCamera(t, dt, player.x + 1.8, player.z + 1.8) // Earthing: Gabriela queda arriba del medidor y nunca la tapa
     else if (s2 === 'HOUSE') updateCamera(t, dt, W.houseCenterX, 0)
@@ -676,7 +677,7 @@ const frame = () => {
     else if (s2 === 'BUS') updateCamera(t, dt, W.busInteriorX, 0)
     else updateCamera(t, dt, ...streetCam(player.x, player.z))
     ui.updateBreath(); ui.updateOverlay(); audio.update(dt, runtime.anxiety)
-    renderer.render(scene, camera); renderSharp(camera, runtime.sharpPlayer)
+    dibujar(); renderSharp(camera, runtime.sharpPlayer)
     // Seguro anti-trabas: si un estado transitorio se queda pegado, se recupera solo
     if (runtime.state !== lastState) { lastState = runtime.state; stateT = 0 } else stateT += dt
     breathIdle = runtime.state === 'BREATHING' && !breathing.active ? breathIdle + dt : 0

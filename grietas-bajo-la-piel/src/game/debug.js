@@ -15,6 +15,7 @@ import { sm } from './stateMachine.js'
 import { TECHS } from './breathing.js'
 import { player } from './player.js'
 import { EXPRESIONES } from './personaje.js'
+import { SEGS } from './environment.js'
 import { npcList } from './npcs.js'
 
 // 1. Panel de debug
@@ -73,6 +74,23 @@ export function initDebug(actions) {
     // Cámara: alejarla para revisar el mapa completo (la cámara sigue a Gabriela; muévela con WASD para recorrer)
     const cam = g.addFolder('Cámara'); cam.add(CONFIG.camera, 'zoom', 0.05, 2.5, 0.01).name('zoom').listen() // menos = más lejos
     add(cam, { 'Vista general del mapa': () => { CONFIG.camera.zoom = 0.12 }, 'Zoom normal': () => { CONFIG.camera.zoom = 1 } })
+    // la calle entera vista desde arriba (como un plano): la cámara mira hacia abajo, centrada en todo el recorrido y con el zoom justo para
+    // que quepa. "Cámara normal" la devuelve a como estaba (también el ángulo)
+    let antes = null
+    add(cam, {
+        'Calle desde arriba (plano)': () => {
+            if (runtime.space !== 'STREET') actions.jumpTo('STREET_PRE')
+            const c = CONFIG.camera; antes ||= { elevation: c.elevation, azimuth: c.azimuth, zoom: c.zoom }
+            const xs = SEGS.flatMap(s => [s.x0, s.x1]), zs = SEGS.flatMap(s => [s.z0, s.z1])
+            const x0 = Math.min(...xs) - 14, x1 = Math.max(...xs) + 14, z0 = Math.min(...zs) - 14, z1 = Math.max(...zs) + 14
+            const a = innerWidth / innerHeight, v = c.view * Math.max(1, 1.4 / a)
+            const libre = 1 - g.domElement.offsetWidth / innerWidth // la parte de la pantalla que no tapa este panel (a la derecha)
+            c.elevation = 89.5; c.azimuth = 0; c.zoom = Math.min(v * a * libre / (x1 - x0), v / (z1 - z0))
+            const ancho = v * a / c.zoom // ancho visible (en metros): el plano se centra en la parte libre, a la izquierda del panel
+            runtime.vistaMapa = { x: (x0 + x1) / 2 + ancho * (1 - libre) / 2, z: (z0 + z1) / 2 }
+        },
+        'Cámara normal': () => { runtime.vistaMapa = null; if (antes) Object.assign(CONFIG.camera, antes); antes = null }
+    })
     cam.add(CONFIG.player, 'speed', 1, 30, 0.5).name('velocidad') // (nombre corto: con el largo, la barra quedaba casi sin espacio)
 
     // Protagonista: sus animaciones en un espacio aparte (visor.js), sin el resto del juego, con cámara libre y los huesos a la vista

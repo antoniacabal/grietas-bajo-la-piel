@@ -213,7 +213,7 @@ function model(path, darkPath, parent, scale, x, y, z, { colors = {}, onLoad } =
     const pair = { normal: null, dark: null }, cache = {}
     const paint = (m) => { // material de la paleta (uno por nombre en cada modelo)
         const calm = colors[m.name] || MODEL_COLORS[m.name] || nearestPal(m.color)
-        return cache[m.name] ||= mat(calm, PAIRS[calm] || '#201826', { flatShading: false })
+        return cache[m.name] ||= mat(calm, PAIRS[calm] || '#201826', { flatShading: false, name: m.name }) // (conserva el nombre: onLoad puede buscar una pieza por material)
     }
     const put = (o, dark) => {
         const extra = []; o.traverse(c => { if (c.isLight || c.isCamera) extra.push(c) }); extra.forEach(c => c.removeFromParent()) // luces y cámaras que trae el archivo de Blender (la de la parada quemaba la escena)
@@ -247,15 +247,46 @@ const scatter = (geo, calm, tense, pts, parent = cur) => { // muchas copias de u
 export const OUTLINE = new THREE.MeshBasicMaterial({ color: 0xf2c063, side: THREE.BackSide, transparent: true, depthWrite: false })
 export const SOFT = new THREE.MeshBasicMaterial({ color: 0xf2c063, side: THREE.BackSide, transparent: true, depthWrite: false }) // brillo suave: el MIO después del sismo y las bancas libres
 const outlined = (mesh, w, h, d, pad = 0.14, y = 0, m = OUTLINE) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w + pad, h + pad, d + pad), m); o.position.y = y; o.visible = false; mesh.add(o); mesh.userData.outline = o; return mesh }
-// Árboles (calle) y matas (casa)
-const trunkMat = mat('#A16A49', '#201826'), blossomMat = mat('#A6869B', '#790A0E'), leafMat = mat('#799180', '#482642')
-const trunkGeo = new THREE.CylinderGeometry(0.16, 0.28, 2, 6), blobGeo = new THREE.IcosahedronGeometry(1, 0)
+// Decoración de la calle con modelos (assets/calle/decoraciones): los archivos traen la escena entera del paquete; de cada uno sirve una pieza
+// (raiz: su nombre; sin nombre, todo el archivo). piezasDe la deja parada en el origen, con la base en y = 0 y 1 de alto (así la escala es el
+// alto en metros). Las hojas toman el verde de la paleta y lo demás el café de los troncos. Cada pieza se dibuja como copias (InstancedMesh):
+// un solo dibujo para todos los árboles o todas las matas
+const trunkMat = mat('#A16A49', '#201826'), leafMat = mat('#799180', '#482642')
+const HOJAS = /^_0(77|14)/
+function piezasDe(url, raiz) {
+    pendientes++ // (también cuentan para modelosListos)
+    return fbx.loadAsync(url).then(o => {
+        o.updateMatrixWorld(true)
+        const r = raiz ? o.getObjectByName(raiz) : o, inv = r.matrixWorld.clone().invert(), partes = [], b = new THREE.Box3()
+        r.traverse(c => { if (!c.isMesh) return; const g = c.geometry.clone().applyMatrix4(inv.clone().multiply(c.matrixWorld)); g.computeBoundingBox(); b.union(g.boundingBox); partes.push({ g, hoja: HOJAS.test([c.material].flat()[0].name) }) })
+        const c = b.getCenter(new THREE.Vector3()), h = b.max.y - b.min.y
+        partes.forEach(p => { p.g.translate(-c.x, -b.min.y, -c.z).scale(1 / h, 1 / h, 1 / h); p.g.computeVertexNormals() })
+        return partes
+    }).catch(() => []).finally(() => { if (--pendientes === 0) avisarListos() })
+}
+// copias: [x, y, z, alto, giro] de cada una
+function copias(partes, lista, parent, mats = { hoja: leafMat, resto: trunkMat }) {
+    if (!lista.length) return []
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3()
+    return partes.map(({ g, hoja }) => {
+        const im = new THREE.InstancedMesh(g, hoja ? mats.hoja : mats.resto, lista.length)
+        lista.forEach(([x, y, z, alto, ry], i) => im.setMatrixAt(i, m4.compose(v.set(x, y, z), q.setFromEuler(e.set(0, ry, 0)), s.setScalar(alto))))
+        im.frustumCulled = false; parent.add(im); return im
+    })
+}
+// Árboles (calle): los de copa (arbol1, arbol3 y arbol4, turnándose) y, uno de cada cuatro, el seco (arbol2). tree() anota dónde va cada uno;
+// se arman al cargar. (Pide al azar lo mismo que los árboles de antes: dos números. Si pidiera más, se correría todo lo que se ubica
+// después: casas, árboles…)
+const D = 'assets/calle/decoraciones/'
+const TIPOS_ARBOL = [ // archivo, pieza (los primeros traían la escena entera del paquete), alto en metros
+    ['arbol1', 'scene002', 3.8], ['arbol2', null, 4.2], ['arbol3', null, 3.9], ['arbol4', null, 4.6]]
+const ARBOLES = TIPOS_ARBOL.map(() => []); let nArboles = 0
 const tree = (x, z) => {
-    const t = new THREE.Group(), trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y = 1; t.add(trunk)
-    ;[[0, 2.7, 0, 1.2], [0.8, 2.3, 0.2, 0.85], [-0.7, 2.4, -0.3, 0.9]].forEach(([bx, by, bz, r]) => { const b = new THREE.Mesh(blobGeo, blossomMat); b.position.set(bx, by, bz); b.scale.setScalar(r); t.add(b) })
-    t.position.set(x, -0.15, z); t.scale.setScalar(rr(0.9, 1.3)); t.rotation.y = rr(0, 6); cur.add(t)
+    const n = nArboles++, k = n % 4 === 3 ? 1 : [0, 2, 3][n % 3]
+    ARBOLES[k].push([x, -0.15, z, TIPOS_ARBOL[k][2] * rr(0.85, 1.25), rr(0, 6)])
     solid(0.35, 0.35, x, z) // el tronco: no se puede atravesar (antes Gabriela pasaba por dentro del árbol)
 }
+TIPOS_ARBOL.forEach(([archivo, pieza], k) => piezasDe(D + archivo + '.fbx', pieza).then(p => copias(p, ARBOLES[k], GROUPS.STREET)))
 
 // 5. Deformación de la ciudad y pasto: la ciudad se deforma con la ansiedad; el pasto se pinta de verde en el Earthing
 const warp = []
@@ -342,7 +373,29 @@ model('assets/casa/cuarto/Cuarto.fbx', 'assets/casa/cuarto/Cuarto_Oscuro.fbx', c
 })
 ;[[-371, -224, 47, 252], [-371, -205, -327, 39], [-201, -38, -269, -109], [122, 362, -325, 100]].forEach(r => rawSolid(R0, r)) // armario · escritorio · silla · cama
 solid(1.4, 0, R0.x - 0.2, -1.9) // frente a la ventana: el alféizar sale de la pared a la altura de la cara y le atravesaba la cabeza al pegarse a ella (margen justo: no más de lo necesario)
-const phone = outlined(box(0.3, 0.05, 0.5, R0.x - 290 * SH, 1.02, -0.25, '#A6869B', '#E4FFFF'), 0.3, 0.05, 0.5) // celular sobre el escritorio (el modelo no lo trae)
+// Objeto suelto con modelo (celular, desayuno): el modelo y su versión oscura van dentro de un grupo (esconder el grupo esconde las dos) y el
+// brillo tiene su forma (shell), pasado a las coordenadas del grupo para que se mueva y se esconda con él
+function suelto(grupo, archivos, escala, colors, brillan = /./, alCargar) {
+    const brillo = new THREE.Group(); brillo.visible = false; grupo.add(brillo); grupo.userData.outline = brillo
+    archivos.forEach(([normal, oscuro], i) => {
+        const g = new THREE.Group(); g.visible = i === 0; grupo.add(g)
+        model(normal, oscuro, g, escala, 0, 0, 0, { colors, onLoad: (o, dark) => {
+            alCargar?.(o, dark)
+            if (dark || i > 0) return
+            grupo.updateMatrixWorld(true); const a = grupo.matrixWorld.clone().invert()
+            o.traverse(c => { if (c.isMesh && brillan.test(c.name)) { const s = shell(c, 1.12); s.geometry.applyMatrix4(a); brillo.add(s) } })
+        } })
+    })
+    return grupo
+}
+// celular sobre el escritorio (Cel.fbx): ~28 × 50 cm, de pie sobre la tabla (el archivo está centrado en su alto)
+const phone = new THREE.Group(); phone.position.set(R0.x - 290 * SH, 0.995 + 39 * 0.00036, -0.25); cur.add(phone)
+// prendido: la pantalla (Material.001, la cara de arriba) tiene luz propia y una luz pequeña encima ilumina un poco el escritorio alrededor.
+// Se va con el celular cuando Gabriela lo coge (es parte del grupo)
+const PANTALLA = '#E4FFFF'
+suelto(phone, [['assets/casa/celular/Cel.fbx', 'assets/casa/celular/CelOsc.fbx']], 0.00036, { Material: '#BF4E24', 'Material.001': '#D8C8AE', 'Material.002': '#BF895A' }, /./,
+    (o) => o.traverse(c => { if (c.isMesh) [c.material].flat().forEach(m => { if (m.name === 'Material.001') { m.emissive.set(PANTALLA); m.emissiveIntensity = 0.75 } }) }))
+{ const luz = new THREE.PointLight(PANTALLA, 1.4, 1.8, 2); luz.position.set(0, 0.25, 0); phone.add(luz) }
 
 // 8. Planta baja: cocina al fondo, comedor a la izquierda, sala con sofá y televisor a la derecha
 into('HOME')
@@ -360,16 +413,13 @@ solid(TABLE[1] - TABLE[0] - 0.36, TABLE[3] - TABLE[2] - 0.36, (TABLE[0] + TABLE[
 export const MOM_SPOT = { x: HX - 2.0, z: -1.8 }   // mamá, en la cocina (frente a la nevera; un poco hacia ella para dejar el paso detrás de las sillas del comedor)
 // silla del comedor donde Gabriela se sienta a comer (la de atrás a la derecha: mira hacia la mesa y hacia la cámara). y: altura del asiento (medida en el modelo)
 export const DINING_SEAT = { x: S0.x - 0.945, z: -0.265, face: 0, y: 0.775, mesa: true }
-const breakfast = new THREE.Group(); breakfast.position.set(DINING_SEAT.x, 0.96, TABLE[2] + 0.4); cur.add(breakfast) // desayuno en la mesa, frente a esa silla
-{
-    const add = (geo, c, t, x, y, z) => { const m = new THREE.Mesh(geo, mat(c, t)); m.position.set(x, y, z); breakfast.add(m) }
-    add(new THREE.CylinderGeometry(0.32, 0.28, 0.04, 16), '#E4FFFF', '#71708A', 0, 0.02, 0)       // plato
-    add(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 12), '#D8C8AE', '#71708A', -0.1, 0.06, 0.05) // arepa
-    add(new THREE.SphereGeometry(0.07, 8, 6), '#F2C063', '#790A0E', 0.12, 0.07, -0.05)           // huevo
-    add(new THREE.CylinderGeometry(0.1, 0.08, 0.22, 10), '#BF4E24', '#580213', 0.05, 0.11, 0.42)  // chocolate
-    const o = new THREE.Group(); o.visible = false; breakfast.add(o); breakfast.userData.outline = o // brilla solo cuando toca comer (main.js lo enciende)
-    ;[[0.42, 0.38, 0.18, 0, 0.05, 0], [0.17, 0.15, 0.32, 0.05, 0.11, 0.42]].forEach(([rt, rb, h, x, y, z]) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 16), OUTLINE); m.position.set(x, y, z); o.add(m) })
-}
+// desayuno en la mesa, frente a esa silla (assets/casa/desayuno): el plato cerca de Gabriela y la taza hacia el centro de la mesa. Tres modelos:
+// lleno, a medio comer y vacío; setDesayuno elige cuál se ve (main.js: se va vaciando mientras come). Brilla solo cuando toca comer
+const breakfast = new THREE.Group(); breakfast.position.set(DINING_SEAT.x, 0.96, TABLE[2] + 0.4); breakfast.rotation.y = Math.PI; cur.add(breakfast)
+suelto(breakfast, [['Desayunolleno', 'Desyunolleno_osc'], ['Desyunomediolleno', 'Desyunomediolleno_osc'], ['DesyunoVacio', 'DesyunoVacio_osc']].map(p => p.map(n => `assets/casa/desayuno/${n}.fbx`)),
+    0.00107, { Loza: '#E4FFFF', Clara: '#E4FFFF', Yema: '#F2C063', Arepa: '#D8C8AE', Cafe: '#A16A49', Material: '#A16A49', Salchicha: '#BF4E24' }, /^(Plato|Taza)$/)
+export const ESTADOS_DESAYUNO = ['lleno', 'medio', 'vacio']
+export function setDesayuno(estado) { const i = ESTADOS_DESAYUNO.indexOf(estado); breakfast.children.slice(1).forEach((g, k) => { g.visible = k === i }) }
 // ventanas de la sala: el marco y el alféizar salen de la pared, y Gabriela se metía en ellas (la del fondo, entre las cortinas, y la de la pared izquierda)
 solid(3.3, 0.3, S0.x + 3.43, -3.0); solid(0.3, 1.5, S0.x - 4.62, 0.85)
 solid(0.4, 0.4, MOM_SPOT.x, MOM_SPOT.z)                              // mamá (el modelo vive en npcs.js): solo su cuerpo, para no cerrar el paso entre la mesa y la cocina
@@ -381,12 +431,22 @@ const RB = ROUTE.reduce((b, [x, z]) => [Math.min(b[0], x), Math.max(b[1], x), Ma
 const FX0 = RB[0] - 12, FX1 = RB[1] + 36, FZ0 = RB[2] - 22, FZ1 = RB[3] + 22 // el campo llega lejos de la calle: nunca se ve el vacío
 const field = box(FX1 - FX0, 0.5, FZ1 - FZ0, (FX0 + FX1) / 2, -0.4, (FZ0 + FZ1) / 2, '#799180', '#482642') // campo (superficie y = -0.15)
 box(FX1 - FX0 - 1.4, 0.9, FZ1 - FZ0 - 1.4, (FX0 + FX1) / 2, -1.1, (FZ0 + FZ1) / 2, '#A16A49', '#201826') // base de tierra flotante
+// Piso de la calle: baldosas (assets/calle/decoraciones/floor_tiles_18, copias de 1k: las de 2k pesaban 9 MB). La textura se repite cada
+// BALDOSA metros, medida sobre el mundo (cada caja ajusta sus coordenadas a su tamaño): así no se estira en los tramos largos. El color
+// del material la tiñe: blanco en calma (sus colores tal cual) y el de tensión de la calle con la ansiedad
+// (CLARO: un poco más que blanco: con la luz cálida de la calle la textura se veía oscura y verdosa)
+const CLARO = new THREE.Color(1.35, 1.35, 1.35)
+const BALDOSA = 6, texCalle = (n, srgb) => { const t = new THREE.TextureLoader().load(`assets/calle/decoraciones/floor_tiles_18_2k/floor_tiles_18_${n}_1k.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t }
+const pisoCalle = mat(CLARO, '#71708A', { map: texCalle('basecolor', true), normalMap: texCalle('normal_gl'), roughness: 0.85 })
+const baldosas = (m) => { const p = m.geometry.parameters, uv = m.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * p.width / BALDOSA, uv.getY(i) * p.depth / BALDOSA); m.material = pisoCalle; return m }
 SEGS.forEach((s, i) => { // los cuatro tramos (el primero sigue detrás de la valla hasta el borde del campo)
     const r = ROADS[i].slice(); if (i === 0) r[0] = FX0 + 1
-    box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05 + i * 0.002, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A') // alturas apenas distintas: las esquinas no parpadean
+    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05 + i * 0.002, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A')) // alturas apenas distintas: las esquinas no parpadean
 })
-const roadExt = box(6, 0.1, 1, UX, -0.04, GATE, '#D8C8AE', '#71708A'); roadExt.visible = false // tramo de la calle eterna
-box(PATH[1] - PATH[0], 0.06, PATH[3] - PATH[2], HOME_DOOR.x, -0.07, (PATH[2] + PATH[3]) / 2, '#D8C8AE', '#71708A') // caminito de la casa de Gabriela
+// tramo de la calle eterna: se estira a lo largo (escala en z), así que lleva su propia copia de la textura y la repite según lo estirado
+const pisoExt = mat(CLARO, '#71708A', { map: texCalle('basecolor', true), normalMap: texCalle('normal_gl'), roughness: 0.85 })
+const roadExt = baldosas(box(6, 0.1, 1, UX, -0.04, GATE, '#D8C8AE', '#71708A')); roadExt.material = pisoExt; roadExt.visible = false
+baldosas(box(PATH[1] - PATH[0], 0.06, PATH[3] - PATH[2], HOME_DOOR.x, -0.07, (PATH[2] + PATH[3]) / 2, '#D8C8AE', '#71708A')) // caminito de la casa de Gabriela
 // Andén de concreto a los lados de la calle, con pedazos de pasto cada tanto (SECTIONS: los que sirven para el Earthing)
 GRASS_STRIPS.forEach(([x0, x1, z0, z1]) => box(x1 - x0, 0.06, z1 - z0, (x0 + x1) / 2, -0.12, (z0 + z1) / 2, '#ABA397', '#4A4452'))
 // Detrás del andén, donde están las casas y edificios: lotes de concreto (entre los edificios no hay pasto)
@@ -410,7 +470,7 @@ SEGS.forEach((s, i) => {
         : [rr(s.x0 - 2.6, s.x0 + 2.6), 0.01, rr(R[2] + 1, R[3] - 1), 1, 1, 1, Math.PI / 2 + rr(-.2, .2)])
 })
 scatter(new THREE.BoxGeometry(0.8, 0.06, 0.34), '#A16A49', '#201826', curbs) // bordillos: bajitos (6 cm, antes 16)
-scatter(new THREE.BoxGeometry(0.8, 0.02, 0.5), '#BF895A', '#580213', stains)
+// (las manchas del camino ya no se dibujan: las baldosas traen las suyas. Se siguen calculando para no correr lo que se ubica al azar después)
 
 // Valla de obra donde se cierra la calle 1 (después del sismo): dos burros con franjas y una señal
 {
@@ -439,7 +499,7 @@ STUBS.forEach(({ r, axis }, i) => [-1, 1].forEach(side => {
     band(0, GW, -0.1185 + i * 0.0003, '#ABA397', '#4A4452'); band(GW, GW + 12, -0.1235 + i * 0.0003, '#968E81', '#3F3A47')
 }))
 STUBS.forEach(({ r, axis, sg, cx, cz }) => {
-    box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.052, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A')
+    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.052, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A'))
     valla(axis === 'x' ? cx + sg * (HW + 5) : cx, axis === 'x' ? cz : cz + sg * (HW + 5), axis) // un poco adentro de la calle cerrada, no pegada al cruce
     for (let t = 0.6; t < STUB_LEN; t += 1.3) [-1, 1].forEach(side => {
         const u = (axis === 'x' ? cx : cz) + sg * (HW + t)
@@ -603,9 +663,11 @@ STUBS.forEach(({ axis, sg, cx, cz }) => {
 ROUTE.slice(1, -1).forEach(([cx, cz]) => [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sz]) => box(18.5, 0.06, 18.5, cx + sx * 9.25, -0.128, cz + sz * 5.35, '#968E81', '#3F3A47')))
 const DECOR = SECTIONS.map(s => grow(s.r, -0.4)).concat(STUB_PLANTERS.map(r => grow(r, -0.4)), [[-41, STREET_X0 - 1.5, -12, 12]])
 const pick = () => { const a = DECOR[Math.floor(rng() * DECOR.length)]; return [rr(a[0], a[1]), rr(a[2], a[3])] }
-const reeds = []; for (let k = 0; k < 260; k++) { const [x, z] = pick(); for (let j = 0; j < 3; j++) { const sy = rr(0.7, 1.4); reeds.push([x + rr(-.25, .25), -0.15 + 0.45 * sy, z + rr(-.25, .25), 1, sy, 1, 0]) } }
-const reedMesh = scatter(new THREE.ConeGeometry(0.12, 0.9, 5), '#D8C8AE', '#71708A', reeds)
-grassOf(field, '#799180', '#482642', '#6FA86B'); grassOf(reedMesh, '#D8C8AE', '#71708A', '#8DBE7A'); grassOf(sectionMesh, '#799180', '#482642', '#5FB04F'); grassOf(stubPlanterMesh, '#799180', '#482642', '#5FB04F') // en el Earthing el pasto se satura de verde
+// matas de pasto (pasto.fbx): de a tres juntas, de 30 a 60 cm, del beige de los juncos de antes (sobre el verde de las jardineras se ven)
+const matas = []; for (let k = 0; k < 260; k++) { const [x, z] = pick(); for (let j = 0; j < 3; j++) { const a = rr(0.3, 0.6); matas.push([x + rr(-.25, .25), -0.12, z + rr(-.25, .25), a, a * 47]) } } // (tres números por mata, como los juncos: el giro sale del alto)
+const pastoMat = mat('#D8C8AE', '#71708A')
+piezasDe(D + 'pasto.fbx', 'scene001').then(p => copias(p, matas, GROUPS.STREET, { hoja: pastoMat, resto: pastoMat }))
+grassOf(field, '#799180', '#482642', '#6FA86B'); grassOf({ material: pastoMat }, '#D8C8AE', '#71708A', '#8DBE7A'); grassOf(sectionMesh, '#799180', '#482642', '#5FB04F'); grassOf(stubPlanterMesh, '#799180', '#482642', '#5FB04F') // en el Earthing el pasto se satura de verde
 scatter(new THREE.SphereGeometry(0.09, 6, 4), '#F2C063', '#790A0E', Array.from({ length: 420 }, () => { const [x, z] = pick(); return [x, -0.08, z] }))
 // Árboles: los de la calle 1 a mano; en los otros tramos, entre las casas del lado lejano; y otros sueltos por el campo
 ;[[9, -5], [16, -5.4], [30, -5.2], [37, -5.6], [44, -5.4], [51, -5], // (los del lado cercano se quitaron: ahí ahora hay casas)
@@ -771,14 +833,20 @@ const CITY_P = 48, cityG = new THREE.Group(); cur.add(cityG)
 box(96, 0.4, 14, BX, -0.35, -10.8, '#799180', '#482642')                 // suelo detrás del MIO
 box(96, 0.05, 2.4, BX, -0.12, -4.9, '#D8C8AE', '#71708A')             // calle
 const cityMats = [['#A6869B', '#482642'], ['#BF895A', '#580213'], ['#D8C8AE', '#71708A'], ['#799180', '#201826']].map(([c, t]) => mat(c, t))
-const cityBlocks = []; let nb = 0; for (let x = 0; x < CITY_P; x += rr(2.4, 3.4)) cityBlocks.push([x, rr(-9, -5.8), rr(2, 3.2), nb++ % 2 ? rr(6, 10) : rr(2.4, 3.6), 2, Math.floor(rr(0, 4))])
+// los edificios son los mismos modelos de la calle (casas, tiendas, edificios y torres, con sus colores y su versión oscura), uno al lado
+// del otro con la fachada hacia el MIO. Antes eran cajas. CIUDAD: [centro a lo largo de la calle, fondo (z), tipo, escala, color]
+const CIUDAD = [], TIPOS_CIUDAD = ['casa', 'edificio', 'tienda', 'torre', 'casa', 'edificio']
+for (let x = 0.3, i = 0; ; i++) {
+    const tipo = TIPOS_CIUDAD[i % TIPOS_CIUDAD.length], e = EDIFICIOS[tipo], k = escalaEdif(e), w = e.ancho * k
+    if (x + w > CITY_P - 0.3) break // (lo que sobra al final queda como espacio entre la copia y la siguiente)
+    CIUDAD.push([x + w / 2, rr(-7.6, -6.6), tipo, k, nFachada++]); x += w + rr(0.3, 1.2)
+}
 ;[0, CITY_P].forEach(off => { // dos copias seguidas: al desplazarse nunca quedan huecos
     const g = new THREE.Group(); g.position.x = off
     for (let x = 0; x < CITY_P; x += 6) { const d = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.02, 0.2), cityMats[2]); d.position.set(BX - 28 + x, -1.19, 0); g.add(d) } // rayas de la calle
-    cityBlocks.forEach(([x, z, w, h, d, ci]) => {
+    CIUDAD.forEach(([x, z, tipo, k, v]) => {
         const b = new THREE.Group(); b.position.set(BX - 28 + x, -0.15, z)
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), cityMats[ci]); m.position.y = h / 2; b.add(m)
-        if (h < 4) { const rf = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.3, d + 0.5), cityMats[1]); rf.position.y = h + 0.15; b.add(rf) }
+        fachadas.push({ g: b, e: EDIFICIOS[tipo], k, frente: FRENTE, dx: 0, v, cerca: false }) // (el modelo se le pone al cargar, como a los de la calle)
         g.add(b); warpable(b, x * 1.3 + z)
     })
     cityG.add(g)
@@ -878,7 +946,7 @@ function updateEndless(dt) {
     endK += (k - endK) * Math.min(1, dt * 0.8)
     ext = E.endless * endK
     uniG.position.z = UNI_Z - ext
-    roadExt.visible = ext > 0.05; roadExt.scale.z = Math.max(0.001, ext); roadExt.position.z = GATE - ext / 2
+    roadExt.visible = ext > 0.05; roadExt.scale.z = Math.max(0.001, ext); roadExt.position.z = GATE - ext / 2; pisoExt.map.repeat.y = pisoExt.normalMap.repeat.y = Math.max(0.001, ext)
     EXT[2] = GATE - ext
     if (scene.background instanceof THREE.Color) scene.fog.color.copy(scene.background)
     if (endK > 0.01) { scene.fog.near = 26 + 40 * (1 - endK); scene.fog.far = scene.fog.near + 12 + 40 * (1 - endK) }

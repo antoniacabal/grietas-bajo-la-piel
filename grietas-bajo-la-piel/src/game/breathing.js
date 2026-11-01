@@ -8,7 +8,6 @@
 // 0. Imports
 import { CONFIG, runtime } from './config.js'
 import { GAMES } from './minigames.js'
-import { audio } from './audio.js'
 import gsap from 'gsap'
 // A veces (40 %) un minijuego empieza con la cámara ladeada y meciéndose de lado a lado, como en el conteo: el mareo de la crisis.
 // No en el conteo (ya lo tiene) ni en Reconstruir la gravedad (ahí la cámara se inclina con Gabriela)
@@ -60,9 +59,7 @@ const kindOf = (t) => t.game || 'hold'
 const randomPick = (space, noEarth) => {
     const pesos = { ...PESOS[indoors(space) ? 'casa' : space === 'BUS' ? 'mio' : 'calle'] }
     if (noEarth) delete pesos.earth
-    // easter egg: con el sonido apagado, "Foco entre el ruido" (un juego de escuchar) no sale hasta que vuelva a haber sonido.
-    // (el volumen del aparato no se puede leer desde el navegador: cuenta el botón de sonido del juego)
-    if (audio.silencio) delete pesos.foco
+    // ("Foco entre el ruido" sale también con el sonido apagado: se juega igual con la vista, que se aclara al acercarse a la gota)
     const prev = TECHS[last] ? kindOf(TECHS[last]) : null
     if (prev && pesos[prev] && Object.keys(pesos).length > 1) pesos[prev] *= 0.4
     let r = Math.random() * Object.values(pesos).reduce((a, b) => a + b, 0), kind = Object.keys(pesos)[0]

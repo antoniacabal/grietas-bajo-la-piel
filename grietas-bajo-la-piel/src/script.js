@@ -181,9 +181,9 @@ async function iniciarMuestra() {
         const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js')
         const { toCreasedNormals } = await import('three/addons/utils/BufferGeometryUtils.js')
         const SH = 0.0065 // escala del cuarto en el juego
-        const COLORES = { Pared: '#A6869B', suelo: '#BF895A', Suelo: '#BF895A', Cafe: '#A16A49', 'Cafe claro': '#BF895A', Naranja: '#BF4E24', Colchon: '#A6869B', Cortina: '#F2C063', Amarillo: '#F2C063', Material: '#799180', Salida: '#71708A' }
+        const COLORES = { Pared: '#A6869B', suelo: '#BF895A', Suelo: '#BF895A', Cafe: '#A16A49', 'Cafe claro': '#BF895A', Naranja: '#BF4E24', Colchon: '#A6869B', Cortina: '#F2C063', Amarillo: '#F2C063', Material: '#799180', Salida: '#71708A', Pantalla: '#D8C8AE' }
         // pareja de ansiedad de cada color (la misma de environment.js): en el glitch el cuarto cambia a estos colores
-        const TENSOS = { '#A6869B': '#482642', '#BF895A': '#580213', '#A16A49': '#201826', '#BF4E24': '#580213', '#F2C063': '#580213', '#799180': '#482642', '#71708A': '#201826' }
+        const TENSOS = { '#A6869B': '#482642', '#BF895A': '#580213', '#A16A49': '#201826', '#BF4E24': '#580213', '#F2C063': '#580213', '#799180': '#482642', '#71708A': '#201826', '#D8C8AE': '#71708A' }
         const pintura = {}, tonos = []
         const pintar = (m) => {
             if (pintura[m.name]) return pintura[m.name]
@@ -195,6 +195,9 @@ async function iniciarMuestra() {
         const cuarto = new THREE.Group()
         scene.add(cuarto)
         const contornoMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }), contornos = []
+        // si el glitch está pasando (lo cambia la animación, 3.9). Los contornos se arman de a poco y pueden llegar antes de que exista tick:
+        // preguntarle a tick ahí lanzaba un error que cortaba el armado y quedaban muebles sin contorno
+        let enGlitch = false
         const siluetaMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true, opacity: 0.85 }) // (ver silueta, más abajo)
         // piso más grueso: una losa debajo del piso del modelo, del mismo color (también cambia en el glitch)
         // del mismo tamaño que la base del modelo (en el archivo va de x -371.4 a 369.4 y de z -329.5 a 328.9) y justo debajo de ella: al ras
@@ -210,10 +213,20 @@ async function iniciarMuestra() {
             const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(quedan, 3)); return new THREE.LineSegments(g, contornoMat)
         })()
         losaContorno.visible = false; losa.add(losaContorno); contornos.push(losaContorno)
-        // el celular sobre el escritorio, en el mismo lugar que en el juego (environment.js: R0.x - 290 · SH, 1.02, -0.25; aquí el cuarto está corrido 19 · SH y 5 · SH)
-        const celular = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.5), pintar({ name: 'Colchon' }))
-        celular.position.set((-290 + 19) * SH, 1.02, -0.25 + 5 * SH); cuarto.add(celular)
-        const celularContorno = new THREE.LineSegments(new THREE.EdgesGeometry(celular.geometry), contornoMat); celularContorno.scale.setScalar(1.04); celularContorno.visible = false; celular.add(celularContorno); contornos.push(celularContorno)
+        // el celular sobre el escritorio (Cel.fbx), en el mismo lugar, tamaño y colores que en el juego (environment.js: R0.x - 290 · SH, sobre
+        // la tabla, a -0.25; aquí el cuarto está corrido 19 · SH y 5 · SH). Sus materiales se pintan con los de la paleta (por nombre)
+        const DEL_CELULAR = { Material: 'Naranja', 'Material.001': 'Pantalla', 'Material.002': 'Cafe claro' }
+        new FBXLoader().load('assets/casa/celular/Cel.fbx', (o) => {
+            o.traverse(c => {
+                if (!c.isMesh) return
+                c.material = [c.material].flat().map(m => pintar({ name: DEL_CELULAR[m.name] || 'Naranja' })); if (c.material.length === 1) c.material = c.material[0]
+                const l = new THREE.LineSegments(new THREE.EdgesGeometry(c.geometry, 35), contornoMat); l.scale.setScalar(1.04); l.visible = enGlitch; c.add(l); contornos.push(l)
+            })
+            o.scale.setScalar(0.00036); o.position.set((-290 + 19) * SH, 0.995 + 39 * 0.00036, -0.25 + 5 * SH); cuarto.add(o)
+            // prendido (como en el juego): la pantalla tiene luz propia y una luz pequeña encima ilumina un poco el escritorio
+            pintura.Pantalla?.emissive.set('#E4FFFF'); if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = 0.75
+            const luz = new THREE.PointLight('#E4FFFF', 1.4, 1.8, 2); luz.position.copy(o.position).y += 0.25; cuarto.add(luz)
+        })
         new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
             cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender
@@ -237,7 +250,7 @@ async function iniciarMuestra() {
                 const escala = new THREE.Vector3().setFromMatrixScale(aArchivo.multiplyMatrices(inversa, c.matrixWorld)), k = 2.2 / ((Math.abs(escala.x) + Math.abs(escala.y) + Math.abs(escala.z)) / 3)
                 const g = c.geometry.clone(), p = g.attributes.position, n = g.attributes.normal
                 for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + n.getX(i) * k, p.getY(i) + n.getY(i) * k, p.getZ(i) + n.getZ(i) * k)
-                const m = new THREE.Mesh(g, siluetaMat); m.visible = !!tick.glitch; c.add(m); contornos.push(m)
+                const m = new THREE.Mesh(g, siluetaMat); m.visible = enGlitch; c.add(m); contornos.push(m)
             }
             const contornoDe = (c) => {
                 if (c.name === 'Tabla') return silueta(c)
@@ -249,7 +262,7 @@ async function iniciarMuestra() {
                     quedan.push(p.getX(i), p.getY(i), p.getZ(i), p.getX(i + 1), p.getY(i + 1), p.getZ(i + 1))
                 }
                 const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(quedan, 3))
-                const l = new THREE.LineSegments(g, contornoMat); l.visible = !!tick.glitch; c.add(l); contornos.push(l)
+                const l = new THREE.LineSegments(g, contornoMat); l.visible = enGlitch; c.add(l); contornos.push(l)
             }
             // de a poco, en los ratos libres del navegador (el glitch tarda unos segundos en llegar; si llega antes, se ven los que ya estén)
             const pendientes = []; if (!liviano) o.traverse(c => { if (c.isMesh) pendientes.push(c) }) // (en equipos livianos el glitch va sin contornos)
@@ -495,11 +508,13 @@ async function iniciarMuestra() {
 
     // 3.6 Cámara -----------------
         const radioCuarto = 3.3 // el cuarto mide unos 5 × 5: así se ve más grande
-        const margen = 1.05
-        const anchoMinimo = radioCuarto * 2 * margen   // ancho visible necesario (~9.1)
+        // margen alrededor del cuarto: en el canvas angosto del celular (casi cuadrado) el cuarto, al mecerse, se salía por los lados y se
+        // cortaba: ahí lleva más margen
+        const margen = (relacion) => relacion < 1.4 ? 1.22 : 1.05
+        const anchoMinimo = (relacion) => radioCuarto * 2 * margen(relacion)   // ancho visible necesario (~9.1 en computador)
         const altoMinimo = 5.6                         // alto visible necesario
 
-        const calcularVista = (relacion) => Math.max(altoMinimo, anchoMinimo / relacion)
+        const calcularVista = (relacion) => Math.max(altoMinimo, anchoMinimo(relacion) / relacion)
 
         let aspecto = sizes.width / sizes.height
         let vista = calcularVista(aspecto)
@@ -535,6 +550,9 @@ async function iniciarMuestra() {
     catch { return sin3d(true) } // sin WebGL: se queda la imagen
     renderer.setPixelRatio(pixeles())
     renderer.setSize(sizes.width, sizes.height, false)
+    // oclusión ambiental (game/oclusion.js, la misma del juego): los rincones y donde se juntan los muebles con el piso y la pared quedan un
+    // poco más oscuros. Solo en equipos que no son livianos (en celulares cuesta demasiado)
+    const oclusion = liviano ? null : (await import('./game/oclusion.js')).crearOclusion(renderer, scene, camera, { radio: 0.35, intensidad: 0.75 })
 
     const resizeObserver = new ResizeObserver(() =>
     {
@@ -554,7 +572,7 @@ async function iniciarMuestra() {
 
         // Actualizar renderizador (también la resolución: si cambia el zoom del navegador o la pantalla, no queda pixelado)
         renderer.setPixelRatio(pixeles())
-        renderer.setSize(sizes.width, sizes.height, false)
+        renderer.setSize(sizes.width, sizes.height, false); oclusion?.tamano(sizes.width, sizes.height)
     })
     resizeObserver.observe(contenedor)
     window.addEventListener('resize', () => renderer.setPixelRatio(pixeles())) // el zoom del navegador puede no cambiar el tamaño del contenedor
@@ -575,7 +593,7 @@ async function iniciarMuestra() {
         // bajarlos era lo que la hacía ver a saltos)
         if (tick.dibujado !== undefined && tiempo - tick.dibujado < 1) { medida.suma += tiempo - tick.dibujado; medida.n++ }
         if (medida.n >= 45) {
-            if (medida.suma / medida.n > 1.6 / fps && resolucion > 0.75) { resolucion = Math.max(0.75, resolucion - 0.25); renderer.setPixelRatio(pixeles()); renderer.setSize(sizes.width, sizes.height, false) }
+            if (medida.suma / medida.n > 1.6 / fps && resolucion > 0.75) { resolucion = Math.max(0.75, resolucion - 0.25); renderer.setPixelRatio(pixeles()); renderer.setSize(sizes.width, sizes.height, false); oclusion?.tamano(sizes.width, sizes.height) }
             medida.suma = medida.n = 0
         }
         tick.dibujado = tiempo
@@ -588,7 +606,7 @@ async function iniciarMuestra() {
         const ciclo = tiempo % 7, dentro = ciclo > 5.2 && ciclo < 6.3                      // un segundo de cada siete
         const borde = ciclo < 5.45 || ciclo > 6.05, parpadeo = borde && Math.sin(tiempo * 60) > 0 // al entrar y al salir parpadea
         const glitch = dentro && (sinMovimiento || !parpadeo)
-        if (glitch !== tick.glitch) { tick.glitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.5 : 0.7; luzAmbiente.color.setHex(glitch ? FRIA : CALIDA); luzSol.color.setHex(glitch ? FRIA : CALIDA); contornos.forEach(l => { l.visible = glitch }) }
+        if (glitch !== tick.glitch) { tick.glitch = enGlitch = glitch; paleta(glitch ? 1 : 0); luzAmbiente.intensity = glitch ? 0.5 : 0.7; luzAmbiente.color.setHex(glitch ? FRIA : CALIDA); luzSol.color.setHex(glitch ? FRIA : CALIDA); contornos.forEach(l => { l.visible = glitch }) }
         luzTension.intensity = glitch ? 2.6 + Math.sin(tiempo * 40) * 0.8 : 0
         canvas.style.transform = glitch && !sinMovimiento ? `translate(${(Math.random() * 6 - 3).toFixed(1)}px, ${(Math.random() * 2 - 1).toFixed(1)}px)` : ''
         canvas.style.filter = glitch ? 'contrast(1.15) saturate(1.2)' : ''
@@ -597,7 +615,7 @@ async function iniciarMuestra() {
 
         girarCamara(tiempo)
 
-        renderer.render(scene, camera)
+        oclusion ? oclusion.render() : renderer.render(scene, camera)
         if (cargados >= 2 && !tick.lista) { tick.lista = true; contenedor.classList.add('muestra-lista') } // ya está todo: se cambia la imagen por la muestra
 
         window.requestAnimationFrame(tick)
@@ -676,9 +694,12 @@ function iniciarDerrumbe() {
     const tramo = (p, a, b) => lim((p - a) / (b - a)) // 0 → 1 mientras p va de a a b
     const rnd = (a, b) => a + Math.random() * (b - a)
     const GRAVEDAD = 2400 // px/s²
-    const ARRIBA = [10, 5, 14], ABAJO = [10, 5, 14] // el techo es del mismo color de la escena (--color-escena): no se nota dónde empieza
+    // el techo es del mismo color de la escena (--color-escena, leído del CSS: en celular es un poco más claro): no se nota dónde empieza
+    let ARRIBA = [10, 5, 14], ABAJO = ARRIBA
+    const leerColor = () => { const m = getComputedStyle(document.body).getPropertyValue('--color-escena').match(/\d+/g); if (m?.length >= 3) { ARRIBA = ABAJO = m.slice(0, 3).map(Number); LADO = `rgb(${ARRIBA.map(c => Math.round(c * 0.4)).join(',')})` } }
     const color = (y, luz = 0) => { const k = lim(y / alto); return `rgb(${ARRIBA.map((c, i) => Math.round(c + (ABAJO[i] - c) * k + luz)).join(',')})` }
-    const LADO = '#040207' // grosor de los pedazos
+    let LADO = '#040207' // grosor de los pedazos (más oscuro que el techo; ver leerColor)
+    const CREMA = '227, 208, 181' // --color-acento: el crema del fondo de los recursos (las grietas)
 
     let W = 0, vh = 0, alto = 0, altoEspacio = 0, banda = 0, dpr = 1 // banda: alto de la parte de arriba que no se cae (sigue la escena)
     let piezas = [], bordes = [], polvo = [], origen = [0, 0], alcance = 1
@@ -687,7 +708,7 @@ function iniciarDerrumbe() {
     // Arma el techo: una malla de puntos movidos al azar; cada celda (o media celda) es un pedazo.
     // Las coordenadas son relativas al borde de arriba del espacio oscuro
     function armar() {
-        vh = window.innerHeight; W = raiz.clientWidth; dpr = Math.min(window.devicePixelRatio || 1, 1.25) // formas planas: con 1.25 se ve igual que con 2 y son la mitad de píxeles
+        leerColor(); vh = window.innerHeight; W = raiz.clientWidth; dpr = Math.min(window.devicePixelRatio || 1, 1.25) // formas planas: con 1.25 se ve igual que con 2 y son la mitad de píxeles
         lienzo.width = Math.round(W * dpr); lienzo.height = Math.round(vh * dpr)
         lienzo.style.width = W + 'px'; lienzo.style.height = vh + 'px'
         espacio.style.height = ''; altoEspacio = espacio.offsetHeight // el alto lo decide el CSS (.derrumbe-espacio)
@@ -887,7 +908,7 @@ function iniciarDerrumbe() {
                     if (b.d > grieta || p0.fija || p1.fija) continue // la parte de arriba (que no se cae) no se agrieta: si no, entre la escena y el derrumbe quedaba una raya
                     const a = lim((grieta - b.d) / 60), k = b.fuerte ? 1 : 0.45
                     ctx.beginPath(); ctx.moveTo(ax, ay); for (const [x, y] of b.zig) ctx.lineTo(x + tx, y + ty); ctx.lineTo(bx, by)
-                    ctx.strokeStyle = 'rgba(0, 0, 0, ' + (0.95 * a * k).toFixed(3) + ')'; ctx.lineWidth = b.fuerte ? 2 : 1.1; ctx.stroke()
+                    ctx.strokeStyle = 'rgba(' + CREMA + ', ' + (0.95 * a * k).toFixed(3) + ')'; ctx.lineWidth = b.fuerte ? 2 : 1.1; ctx.stroke() // grietas color crema (el fondo de los recursos: como si se viera a través)
                 } else if (b.piezas.length === 2) {
                     const otra = b.piezas[0] === p0 ? b.piezas[1] : b.piezas[0]
                     if (otra.cy > p0.cy) { // el hueco queda abajo: se ve el grosor del techo

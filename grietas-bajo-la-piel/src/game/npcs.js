@@ -11,11 +11,10 @@ import * as THREE from 'three'
 import { spaces, walkableIn, SEATS, SEAT_Y, MOM_SPOT, DRIVER_SEAT, STREET_X0, SEGS, ROUTE_LEN, routePoint, GHOSTS } from './environment.js'
 import { CONFIG, runtime } from './config.js'
 import { player } from './player.js'
-import { crearExtras, alturaPaso } from './personaje.js'
+import { crearExtras, alturaPaso, crearPersonaje, hojaDe } from './personaje.js'
 
 // 1. Estado y modelo del NPC
 export const npcState = { near: 0, bumps: 0, calms: 0 } // near = gente cerca del personaje · bumps = choques acumulados · calms = alucinaciones tocadas
-const black = new THREE.MeshStandardMaterial({ color: 0x0d0d10 }), white = new THREE.MeshBasicMaterial({ color: 0xffffff })
 const bodyG = new THREE.ConeGeometry(0.42, 1.3, 12), headG = new THREE.SphereGeometry(0.38, 14, 10), eyeG = new THREE.SphereGeometry(0.075, 8, 6)
 // Las personas son los modelos de assets/npc (tres variantes: Extra1, Extra2 y Extra3), siluetas negras con el mismo cuerpo de Gabriela
 // y su mismo esqueleto (personaje.js, crearExtras): caminan, esperan de pie o van sentadas con las mismas poses que ella.
@@ -62,36 +61,29 @@ SEATS.sort(() => Math.random() - 0.5).slice(0, CONFIG.npcs.bus).forEach(s => {
 })
 { const g = make(); g.position.set(DRIVER_SEAT.x, SEAT_Y, DRIVER_SEAT.z); g.rotation.y = Math.PI / 2; add({ g, parent: spaces.BUS, sp: 'BUS', kind: 'driver', ph: 0, y: SEAT_Y - 0.46 }) } // conductor, sentado en su puesto del modelo
 
-// 3. Mamá: en la cocina, te mira cuando estás cerca y se mueve un poco al hablar (su colisión está en environment.js)
-// Es una silueta negra como los demás NPCs (la ansiedad no deja ver a los otros como personas), pero conserva
-// lo que la hace reconocible: delantal, moño y pestañas
+// 3. Mamá: en la cocina, te mira cuando estás cerca y al hablar asiente y mueve la mano (su colisión está en environment.js).
+// Es su modelo (assets/casa/madre) con el esqueleto de Gabriela (personaje.js): el mismo cuerpo base, pero más alta (las piernas y el torso
+// más largos; los pares de alturas la ajustan). Sus ojos son un dibujo como los de Gabriela, de su propia hoja: abiertos, parpadeo y
+// cerrados (sonriendo: al empezar a hablar antes del sismo). En el nivel más alto de ansiedad cambia a su versión oscura, como todo
+const CARAS_MAMA = hojaDe('assets/casa/madre/Caras-madre_Mesa de trabajo 1 copia 3.png', 419, 632, 240, 160, { normal: [90, 18], parpadeo: [90, 234], cerrados: [90, 458] })
 export const mom = (() => {
-    const HX = CONFIG.world.homeX, g = new THREE.Group(), body = new THREE.Group(), hg = new THREE.Group()
-    const mesh = (geo, m, x, y, z, parent) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o }
-    mesh(bodyG, black, 0, 0.65, 0, body)                                                       // cuerpo (igual que los NPCs)
-    // delantal blanco: un trozo de cono pegado al frente del cuerpo (trapecio visto de frente)
-    mesh(new THREE.CylinderGeometry(0.245, 0.4, 0.5, 16, 1, true, -0.75, 1.5), white, 0, 0.33, 0, body)
-    mesh(headG, black, 0, 0, 0, hg)                                                            // cabeza
-    mesh(new THREE.SphereGeometry(0.17, 14, 10), black, 0, 0.3, -0.2, hg)                      // moño (arriba y hacia atrás)
-    const eyeR = new THREE.SphereGeometry(0.105, 16, 12), lashG = new THREE.ConeGeometry(0.045, 0.13, 3)
-    ;[-0.14, 0.14].forEach(x => {
-        const s = Math.sign(x)
-        mesh(eyeR, white, x, 0.04, 0.33, hg).scale.set(1, 1, 0.4)                              // ojos redondos y grandes
-        const l = mesh(lashG, white, x + s * 0.1, 0.11, 0.3, hg)                               // pestaña: una punta blanca en la esquina de afuera
-        l.rotation.set(-0.3, 0, -s * 1.05); l.scale.z = 0.4
-    })
-    hg.position.y = 1.5; g.add(body, hg); g.position.set(MOM_SPOT.x, 0, MOM_SPOT.z); spaces.HOME.add(g)
-    let talking = false
+    const g = new THREE.Group()
+    const rig = crearPersonaje(1.8, { normal: 'assets/casa/madre/Mama.fbx', oscuro: 'assets/casa/madre/MamaOsc.fbx' }, null, {
+        proporciones: [[0, 0], [38, 42], [90, 74], [100, 81], [104, 84], [150, 128]], hoja: CARAS_MAMA, anchoCara: 41 })
+    rig.cargar('normal'); g.add(rig.grupo); g.position.set(MOM_SPOT.x, 0, MOM_SPOT.z); spaces.HOME.add(g)
+    let talking = false, sonrie = 0
     return {
         g,
-        setTalking(v) { talking = v },
+        setTalking(v) { if (v && !talking && !runtime.postQuake) sonrie = 1.4; talking = v },
         update(dt, t) {
+            rig.pose(talking ? 'hablar' : 'quieta', t); rig.aplicar(dt) // (también fuera de la cocina: el archivo está en T y, si no, al llegar se la veía bajando los brazos)
             if (runtime.space !== 'HOME') return
             const want = Math.atan2(player.x - g.position.x, player.z - g.position.z)
             let d = want - g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); g.rotation.y += d * Math.min(1, dt * 4)
-            hg.rotation.x = talking ? Math.sin(t * 7) * 0.08 : 0
-            body.scale.y = 1 + Math.sin(t * 1.6) * 0.015
-            g.position.y = talking ? Math.abs(Math.sin(t * 6)) * 0.03 : 0
+            sonrie -= dt; rig.expresion(sonrie > 0 ? 'cerrados' : 'normal', sonrie > 0 ? null : 'parpadeo')
+            const nivel = runtime.levelVis ?? -1; if (nivel > 2) rig.cargar('oscuro') // como Gabriela (player.js): se prepara un poco antes
+            const { normal, oscuro } = rig.versiones; if (normal && oscuro) { normal.visible = nivel <= 2.75; oscuro.visible = nivel > 2.75 }
+            rig.grupo.position.y = 0.002 - rig.piso() // apoyada en la suela más baja
         }
     }
 })()

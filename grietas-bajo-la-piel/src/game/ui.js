@@ -165,11 +165,16 @@ saltar.addEventListener('click', (e) => {
     if (!card.hidden && onCardNext) onCardNext() // la tarjeta pasa ya (las siguientes pasan solas: ver fill en card)
     if (whispering) whisperTl?.progress(1)
 })
+const avisoEl = $('.gx-aviso'); let avisoTimer = null
 export const ui = {
     vignette: $('.gx-vignette'),
     say(t) { // los mensajes se van solos después de unos segundos (los de la respiración los pone updateBreath)
         msg.textContent = t; sayTimer?.kill()
         sayTimer = t ? gsap.delayedCall(Math.min(7, 2.8 + t.length * 0.05), () => { if (msg.textContent === t) msg.textContent = '' }) : null
+    },
+    aviso(t) { // aviso enano (como un diálogo chiquito): se va solo a los pocos segundos
+        avisoEl.textContent = t; avisoEl.hidden = false; avisoTimer?.kill()
+        avisoTimer = gsap.delayedCall(Math.min(5, 2.4 + t.length * 0.04), () => { avisoEl.hidden = true })
     },
     updateOverlay() { // los controles táctiles no se ven encima de las tarjetas, los pop-ups ni la pantalla en negro; los botones de arriba, no en las tarjetas
         const hide = !card.hidden || modals.some(m => !m.hidden) || gsap.getProperty(fadeEl, 'opacity') > 0.35
@@ -177,6 +182,8 @@ export const ui = {
         const top = this.blackout && !pauseOn
         if (top !== topHidden) { topHidden = top; document.body.classList.toggle('gx-tarjeta', top) }
         document.body.classList.toggle('gx-minijuego', inGame())
+        // minijuegos con su propio panel (sonido, gravedad, conteo): en el celular no usan el joystick ni Interactuar (game.css los esconde y acomoda el resto)
+        document.body.classList.toggle('gx-mini-panel', inGame() && ['foco', 'gravedad', 'conteo'].includes(runtime.techId))
         // Saltar: aparece cuando un diálogo, una tarjeta con "Continuar" o las frases sobre negro llevan un rato (2 s) en pantalla
         const scene = !talkEl.hidden || (!card.hidden && !!onCardNext) || whispering || !!skipTo, now = performance.now()
         if (!scene) sceneSince = 0; else if (!sceneSince) sceneSince = now

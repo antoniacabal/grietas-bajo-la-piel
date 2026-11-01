@@ -193,7 +193,6 @@ const radio = {
 
 export const audio = {
     ruido, radio, suspiro,
-    get silencio() { return !ctx || !musicOn || !fxOn || ctx.state !== 'running' }, // sonido apagado en el juego (o sin audio): breathing.js no saca "Foco entre el ruido"
     playFile,
     init, blip,
     setMusic(v) { musicOn = v; mix(lastA, true) },

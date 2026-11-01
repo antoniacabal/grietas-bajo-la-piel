@@ -53,7 +53,7 @@
     --color-scroll-pista: #DABE9E; /* Franja del scroll sobre fondo crema (crema un poco más oscuro) */
     --color-atencion: #BF4E24; /* Color extra para llamar la atencion/alertas, también el pedazo y las flechas del scroll sobre fondo crema */
     --color-texto: #101720; /* Color negro para textos que no es negro puro */
-    --color-escena: rgb(10, 5, 14); /* Fondo de la sección del juego (muestra del index y narrativa) */
+    --color-escena: rgb(10, 5, 14); /* Fondo de la sección del juego (muestra del index y narrativa) y del techo que se rompe (script.js lo lee de aquí) */
     --color-advertencia: #D01F2A; /* Título de la ventana de advertencia */
     --color-advertencia-icono: #780A0F; /* Triángulo de advertencia */
     --color-advertencia-flecha: #A6869B; /* Flechas de Volver / Seguir */
@@ -625,6 +625,7 @@ main
 
     /* 5.4 Animación: techo que se derrumba con el scroll (index). Debajo de la muestra la página sigue oscura; (script.js, sección 7) */
     .pagina-inicio { --color-velo: var(--color-escena); } /* el techo es del color de la escena: sin franja entre los dos */
+    .escena-mas { display: none; } /* (solo en celular, ver 5.2) */
     .derrumbe-espacio { height: 60vh; flex: none; margin-top: -2px; } /* -1px: se monta sobre la escena (sin rendija entre las dos) */ /* espacio extra para ver el derrumbe antes de los recursos (el alto exacto lo pone script.js) */
     .derrumbe { position: fixed; top: 0; left: 0; z-index: 1100; pointer-events: none; }
     .derrumbe-activo .pagina-inicio .escena::after { display: none; } /* la escena sigue de largo en el techo: sin degradado (dejaba una línea en la unión) */
@@ -2016,6 +2017,27 @@ main
        el título quedaba cortado arriba y la muestra 3D abajo (de ahí la línea rara sobre el fundido) */
     @media (max-width: 768px)
     {
+        .derrumbe-espacio { height: 26vh; } /* menos espacio vacío antes de los recursos (antes 42vh: quedaba un pedazo oscuro sin nada) */
+        .escena-contenido .boton { margin-top: 18px; } /* el botón Iniciar más separado del último párrafo */
+
+        /* aviso debajo de la muestra: hay más información abajo (con la flecha que salta) */
+        .escena-mas
+        {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            align-self: center;
+            margin-top: 64px; /* bien separado de la muestra (antes 8px: quedaba pegado) */
+            padding: 8px 16px;
+            border: 2px solid var(--color-principal);
+            border-radius: 999px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            color: var(--color-principal);
+            text-decoration: none;
+        }
+        .escena-mas svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; animation: flecha-salto 1.6s ease-in-out infinite; }
+
         .escena
         {
             flex-direction: column;
@@ -2023,7 +2045,7 @@ main
             gap: 20px;
             height: auto;
             min-height: calc(100svh - 60px);
-            padding: 36px 5% 96px;
+            padding: 36px 5% 48px; /* (abajo 48px, antes 96: menos espacio vacío antes del derrumbe) */
         }
 
         .escena-contenido
@@ -2050,6 +2072,7 @@ main
         .escena-canvas
         {
             flex: 0 0 auto;
+            margin-top: 28px; /* la muestra un poco más abajo: no queda pegada al botón Iniciar */
             width: 100%;
             max-width: none;
             height: clamp(240px, 42svh, 360px);

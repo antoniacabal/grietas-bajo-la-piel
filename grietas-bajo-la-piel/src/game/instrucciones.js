@@ -4,6 +4,10 @@
 const C = { fondo: '#2A2033', linea: '#E4FFFF', oro: '#F2C063', menta: '#9ff0de', lila: '#d9bdf2', pasto: '#799180', piel: '#F2CBB0', cafe: '#A16A49', rojo: '#D01F2A' }
 const svg = (dentro) => `<svg viewBox="0 0 120 90" aria-hidden="true">${dentro}</svg>`
 const raton = (x, y, presionado) => `<rect x="${x}" y="${y}" width="22" height="32" rx="11" fill="none" stroke="${C.linea}" stroke-width="2.5"/><path d="M${x + 11} ${y} V${y + 13}" stroke="${C.linea}" stroke-width="2"/>${presionado ? `<path d="M${x + 2} ${y + 10} Q${x + 2} ${y + 1} ${x + 11} ${y + 1} V${y + 13} H${x + 2} Z" fill="${C.oro}"/>` : ''}`
+// el botón Interactuar del celular (en vez del mouse): redondo, como en pantalla; presionado se llena de dorado
+const boton = (x, y, presionado) => `<circle cx="${x + 11}" cy="${y + 16}" r="14" fill="${presionado ? C.oro : 'rgba(228,255,255,.12)'}" stroke="${C.linea}" stroke-width="2"/><path d="M${x + 5} ${y + 16} h12 M${x + 13} ${y + 12} l4 4 l-4 4" fill="none" stroke="${presionado ? '#201826' : C.linea}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+// la parte que cambia entre computador (mouse, clic) y celular (botón Interactuar)
+const segun = (pc, tactil) => `<g class="gx-solo-teclado">${pc}</g><g class="gx-solo-tactil">${tactil}</g>`
 const ruido = (x, y) => `<path d="M${x} ${y} l5 -12 l5 22 l5 -30 l5 34 l5 -24 l5 18 l5 -10" fill="none" stroke="${C.rojo}" stroke-width="2.5" stroke-linejoin="round"/>`
 const gota = (x, y, s = 1, c = C.menta) => `<path transform="translate(${x} ${y}) scale(${s})" d="M0 -12 C0 -12 -8 -1 -8 4 a8 8 0 0 0 16 0 C8 -1 0 -12 0 -12 Z" fill="${c}"/>`
 // las flechas en pantalla del celular (en vez de A / D): un botón redondo con un chevrón
@@ -12,9 +16,9 @@ const persona = (x, y, giro = 0) => `<g transform="translate(${x} ${y}) rotate($
 
 export const INSTRUCCIONES = {
     hold: [
-        { img: svg(`<circle cx="45" cy="45" r="30" fill="none" stroke="${C.linea}" stroke-opacity=".35" stroke-width="2"/><circle cx="45" cy="45" r="24" fill="${C.menta}"/>${raton(86, 30, true)}<path d="M45 12 v-6 M45 6 l-4 4 M45 6 l4 4" stroke="${C.menta}" stroke-width="2.5" stroke-linecap="round"/>`), txt: 'Mantén el clic para inhalar' },
+        { img: svg(`<circle cx="45" cy="45" r="30" fill="none" stroke="${C.linea}" stroke-opacity=".35" stroke-width="2"/><circle cx="45" cy="45" r="24" fill="${C.menta}"/>${segun(raton(86, 30, true), boton(84, 29, true))}<path d="M45 12 v-6 M45 6 l-4 4 M45 6 l4 4" stroke="${C.menta}" stroke-width="2.5" stroke-linecap="round"/>`), txt: 'Mantén <span class="gx-solo-teclado">el clic</span><span class="gx-solo-tactil">Interactuar</span> para inhalar' },
         { img: svg(`<circle cx="60" cy="45" r="32" fill="none" stroke="${C.linea}" stroke-opacity=".25" stroke-width="12"/><circle cx="60" cy="45" r="32" fill="none" stroke="${C.linea}" stroke-width="2.5"/><circle cx="60" cy="45" r="30" fill="${C.oro}" fill-opacity=".85"/>`), txt: 'Tu círculo sigue al aro' },
-        { img: svg(`<circle cx="45" cy="45" r="30" fill="none" stroke="${C.linea}" stroke-opacity=".35" stroke-width="2"/><circle cx="45" cy="45" r="12" fill="${C.lila}"/>${raton(86, 30, false)}<path d="M45 22 v8 M45 30 l-4 -4 M45 30 l4 -4" stroke="${C.lila}" stroke-width="2.5" stroke-linecap="round"/>`), txt: 'Suelta para exhalar' }
+        { img: svg(`<circle cx="45" cy="45" r="30" fill="none" stroke="${C.linea}" stroke-opacity=".35" stroke-width="2"/><circle cx="45" cy="45" r="12" fill="${C.lila}"/>${segun(raton(86, 30, false), boton(84, 29, false))}<path d="M45 22 v8 M45 30 l-4 -4 M45 30 l4 -4" stroke="${C.lila}" stroke-width="2.5" stroke-linecap="round"/>`), txt: 'Suelta para exhalar' }
     ],
     earth: [
         { img: svg(`<rect x="62" y="52" width="46" height="22" rx="4" fill="${C.pasto}"/>${persona(28, 62)}<path d="M40 44 L60 54" stroke="${C.oro}" stroke-width="3" stroke-linecap="round"/><path d="M60 54 l-8 -1 M60 54 l-4 -7" stroke="${C.oro}" stroke-width="3" stroke-linecap="round"/>`), txt: 'Camina hasta el pasto' },
