@@ -326,6 +326,14 @@ function metaDe(meta, nombre, t, k, r = 0) { // k: 0 → 1 (al caminar, cuánto 
         meta.espalda.x = 0.02 * Math.sin(t * 1.6); meta.antebrazoI.y = -0.2; meta.brazoI.z += 0.06
         meta.cabeza.x = 0.06 * Math.sin(t * 7); meta.cabeza.y = 0.08 * Math.sin(t * 0.9)
         meta.brazoD.z -= 0.1; meta.brazoD.x = -0.35; meta.antebrazoD.y = 0.7 + 0.35 * Math.sin(t * 3.2); meta.manoD.z = 0.2
+    } else if (nombre === 'abrazar') { // abrazo (Gabriela y la mamá, main.js): los brazos al frente rodean al otro y la cabeza se ladea y se
+        // apoya; k: cuánto (0 → 1, para entrar y salir suave) · r: hacia dónde mira la cabeza (positivo: hacia abajo, la mamá mira a Gabriela)
+        const a = paso(0, 1, k), resp = 0.02 * Math.sin(t * 1.4)
+        meta.brazoI.z = -BRAZO_ABAJO + 0.25 * a; meta.brazoD.z = BRAZO_ABAJO - 0.25 * a     // los brazos se abren un poco hacia los lados…
+        meta.brazoI.x = meta.brazoD.x = -1.15 * a                                             // …y van al frente
+        meta.antebrazoI.y = -1.5 * a; meta.antebrazoD.y = 1.5 * a                             // y se doblan hacia adentro: rodean
+        mano(meta, 0.35 + 0.3 * a)
+        meta.espalda.x = (0.06 + 0.1 * r) * a + resp; meta.cabeza.x = (0.08 + 0.3 * r) * a; meta.cabeza.y = 0.35 * a; meta.cabeza.z = -0.12 * a
     } else { // de pie: respira despacio, con los brazos sueltos
         meta.espalda.x = 0.02 * Math.sin(t * 1.6); meta.antebrazoI.y = -0.2; meta.antebrazoD.y = 0.2
         meta.brazoI.z += 0.06; meta.brazoD.z -= 0.06; meta.cabeza.y = 0.06 * Math.sin(t * 0.5)

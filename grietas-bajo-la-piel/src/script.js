@@ -225,12 +225,12 @@ async function iniciarMuestra() {
             o.scale.setScalar(0.00036); o.position.set((-290 + 19) * SH, 0.995 + 39 * 0.00036, -0.25 + 5 * SH); cuarto.add(o)
             // prendido (como en el juego): la pantalla tiene luz propia y una luz pequeña encima ilumina un poco el escritorio
             pintura.Pantalla?.emissive.set('#E4FFFF')
-            luzCelular = new THREE.PointLight('#E4FFFF', 1.4, 1.8, 2); luzCelular.position.copy(o.position).y += 0.25; cuarto.add(luzCelular)
+            luzCelular = new THREE.PointLight('#E4FFFF', 0.6, 1.5, 2); luzCelular.position.copy(o.position).y += 0.25; cuarto.add(luzCelular)
             prenderCelular(!enGlitch)
         })
         // en el glitch el celular se apaga (la pantalla deja de brillar y su luz se va); al volver a la calma se prende otra vez
         let luzCelular = null
-        const prenderCelular = (si) => { if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = si ? 0.75 : 0; if (luzCelular) luzCelular.intensity = si ? 1.4 : 0 }
+        const prenderCelular = (si) => { if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = si ? 0.35 : 0; if (luzCelular) luzCelular.intensity = si ? 0.6 : 0 }
         new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
             cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender

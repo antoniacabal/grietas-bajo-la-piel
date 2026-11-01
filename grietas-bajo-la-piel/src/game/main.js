@@ -186,6 +186,25 @@ function talkToMom() {
     busy = true; player.setMode('stop'); ui.say(''); mom.setTalking(true); faceMom()
     ui.talk('Mamá', momLines().hello, { onEnd: () => { mom.setTalking(false); momDone = true; freeAgain() } })
 }
+// Al despedirse (después del desayuno, antes de salir) se abrazan: Gabriela camina hasta mamá, se quedan abrazadas un momento (las dos con los
+// ojos cerrados) y vuelve caminando a donde estaba (si se quedaba ahí, quedaba dentro del espacio de mamá y no se podía mover; y un paso atrás
+// cualquiera podía meterla en una silla o en el mesón). Se pone al lado de mamá, de perfil a la cámara (del lado donde ya estaba): si llegaba
+// de frente, su espalda tapaba a mamá
+function hugMom(alFinal) {
+    const g = player.group.position, m = mom.g.position, x0 = g.x, z0 = g.z, CERCA = 0.46 // distancia entre los dos centros, abrazadas
+    const az = THREE.MathUtils.degToRad(CONFIG.camera.azimuth); let ux = Math.cos(az), uz = -Math.sin(az) // (de lado respecto a la cámara: camera.js)
+    if ((x0 - m.x) * ux + (z0 - m.z) * uz < 0) { ux = -ux; uz = -uz }
+    const ax = m.x + ux * CERCA, azz = m.z + uz * CERCA, d = Math.hypot(ax - x0, azz - z0), paso = Math.max(0.4, d / 1.6)
+    const mirar = (x, z) => { player.group.rotation.y = Math.atan2(x, z) }
+    mirar(ax - x0, azz - z0); player.paseo(true) // camina hasta ella
+    gsap.timeline({ onComplete: alFinal })
+        .to(g, { x: ax, z: azz, duration: paso, ease: 'none' })
+        .add(() => { player.paseo(false); mirar(-ux, -uz); player.abrazar(true); mom.setAbrazo(true) })
+        .add(() => { player.abrazar(false); mom.setAbrazo(false) }, '+=2.3')
+        .add(() => { mirar(x0 - ax, z0 - azz); player.paseo(true) }, '+=0.35')
+        .to(g, { x: x0, z: z0, duration: paso, ease: 'none' })
+        .add(() => player.paseo(false))
+}
 // Después del sismo mamá está pendiente: si te quedas mucho rato en el cuarto, te pregunta desde abajo si estás bien (una vez por día).
 // Hablar con ella te baja un nivel de ansiedad. (En la sala, al perder un minijuego, ya no pregunta)
 const MOM_CHECK = {
@@ -225,7 +244,7 @@ function eat() {
 function momBye() {
     const post = runtime.postQuake; mom.setTalking(true); ui.say(''); faceMom() // después de comer se voltea de nuevo hacia ella
     if (post) gsap.to(runtime, { anxiety: C.baseline, stress: 0, duration: 12 }) // mientras mamá te habla, la ansiedad baja poco a poco
-    ui.talk('Mamá', momLines().bye, { onEnd: () => { mom.setTalking(false); if (post) runtime.nextCrisis = C.first; freeAgain() } })
+    ui.talk('Mamá', momLines().bye, { onEnd: () => { mom.setTalking(false); hugMom(() => { if (post) runtime.nextCrisis = C.first; freeAgain() }) } }) // y se abrazan antes de salir
 }
 
 // 5. El MIO: antes del sismo es el viaje normal (el sismo llega durante el trayecto).
@@ -291,7 +310,7 @@ function startRide() { if (runtime.busMoving) return; runtime.busMoving = true; 
 
 // 6. Interacción: clic (o el botón táctil Interactuar)
 function interact() {
-    if (runtime.paused || runtime.state !== 'EXPLORATION' || busy) return
+    if (runtime.paused || runtime.state !== 'EXPLORATION' || busy || runtime.tambaleo !== undefined) return // (durante Reconstruir la gravedad no te puedes sentar)
     if (runtime.space === 'BUS') { // sentarse / levantarse en las bancas del MIO
         if (player.sitting) { if (!player.seatLocked) player.unsit(); return } // después del sismo puedes pararte (y bajarte por las puertas) cuando quieras; antes, el viaje sigue hasta el sismo
         const s = SEATS.filter(s => !s.taken).sort((a, b) => Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z))[0]

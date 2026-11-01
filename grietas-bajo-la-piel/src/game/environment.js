@@ -156,7 +156,7 @@ export const walkableIn = (sp, x, z, npc = false) => { // se puede preguntar por
 export const walkable = (x, z) => walkableIn(runtime.space, x, z)
 // Altura del piso de la calle donde se para Gabriela (medida en las cajas de abajo): el asfalto en y = 0 (con manchas de 2 cm), los bordillos en 0.03 y el
 // andén, el pasto y los lotes en -0.09. Antes era 0.05 en el asfalto y 0.03 en lo demás: sobre los bordillos (más altos) los pies se metían
-const enBordillo = (lista, x, z) => lista.some(([cx, , cz, , , , ry]) => ry ? Math.abs(cx - x) < 0.17 && Math.abs(cz - z) < 0.4 : Math.abs(cx - x) < 0.4 && Math.abs(cz - z) < 0.17)
+const enBordillo = (lista, x, z) => lista.some(([cx, , cz, largo, , , ry]) => ry ? Math.abs(cx - x) < 0.17 && Math.abs(cz - z) < largo / 2 : Math.abs(cx - x) < largo / 2 && Math.abs(cz - z) < 0.17) // (cada bordillo es una caja de su largo)
 export const sueloCalle = (x, z) => enBordillo(curbs, x, z) || enBordillo(stubCurbs, x, z) ? BORDILLO + 0.005
     : ROADS.some(r => inRect(r, x, z)) || STUBS.some(o => inRect(o.r, x, z)) ? 0.02 : inRect(PATH, x, z) ? -0.04 : -0.09 // (0.02 en el asfalto: encima de sus manchas)
 // pisando uno de los pedazos de pasto del andén (con un margen pequeño: pararse en el borde ya cuenta)
@@ -282,11 +282,19 @@ const TIPOS_ARBOL = [ // archivo, pieza (los primeros traían la escena entera d
     ['arbol1', 'scene002', 3.8], ['arbol2', null, 4.2], ['arbol3', null, 3.9], ['arbol4', null, 4.6]]
 const ARBOLES = TIPOS_ARBOL.map(() => []); let nArboles = 0
 const tree = (x, z) => {
-    const n = nArboles++, k = n % 4 === 3 ? 1 : [0, 2, 3][n % 3]
-    ARBOLES[k].push([x, -0.15, z, TIPOS_ARBOL[k][2] * rr(0.85, 1.25), rr(0, 6)])
-    solid(0.35, 0.35, x, z) // el tronco: no se puede atravesar (antes Gabriela pasaba por dentro del árbol)
+    const n = nArboles++, k = n % 4 === 3 ? 1 : [0, 2, 3][n % 3], t = [x, -0.15, z, TIPOS_ARBOL[k][2] * rr(0.85, 1.25), rr(0, 6)]
+    t.ok = true; ARBOLES[k].push(t)
+    solid(0.35, 0.35, x, z, () => t.ok) // el tronco: no se puede atravesar (antes Gabriela pasaba por dentro del árbol) · solo si el árbol quedó (ver abajo)
 }
-TIPOS_ARBOL.forEach(([archivo, pieza], k) => piezasDe(D + archivo + '.fbx', pieza).then(p => copias(p, ARBOLES[k], GROUPS.STREET)))
+// Los árboles que se meterían en un edificio (la copa contra una fachada o encima de uno de los de cartón del fondo) no se ponen. Se revisa
+// cuando ya está todo el mapa armado (los edificios de cartón se arman después que los árboles); los números al azar ya se pidieron
+const COPA = 1.1 // cuánto se abre la copa alrededor del tronco (m)
+const tapado = (x, z) => SOLIDS.some(s => s.edificio && s.space === 'STREET' && Math.abs(x - s.x) < s.hw - PAD + COPA && Math.abs(z - s.z) < s.hd - PAD + COPA)
+    || mid.concat(cerca).some(([bx, bz, w, , d]) => Math.abs(x - bx) < w / 2 + COPA && Math.abs(z - bz) < d / 2 + COPA)
+TIPOS_ARBOL.forEach(([archivo, pieza], k) => piezasDe(D + archivo + '.fbx', pieza).then(p => {
+    ARBOLES[k].forEach(t => { t.ok = !tapado(t[0], t[2]) })
+    copias(p, ARBOLES[k].filter(t => t.ok), GROUPS.STREET)
+}))
 
 // 5. Deformación de la ciudad y pasto: la ciudad se deforma con la ansiedad; el pasto se pinta de verde en el Earthing
 const warp = []
@@ -394,8 +402,8 @@ const phone = new THREE.Group(); phone.position.set(R0.x - 290 * SH, 0.995 + 39 
 // Se va con el celular cuando Gabriela lo coge (es parte del grupo)
 const PANTALLA = '#E4FFFF'
 suelto(phone, [['assets/casa/celular/Cel.fbx', 'assets/casa/celular/CelOsc.fbx']], 0.00036, { Material: '#BF4E24', 'Material.001': '#D8C8AE', 'Material.002': '#BF895A' }, /./,
-    (o) => o.traverse(c => { if (c.isMesh) [c.material].flat().forEach(m => { if (m.name === 'Material.001') { m.emissive.set(PANTALLA); m.emissiveIntensity = 0.75 } }) }))
-{ const luz = new THREE.PointLight(PANTALLA, 1.4, 1.8, 2); luz.position.set(0, 0.25, 0); phone.add(luz) }
+    (o) => o.traverse(c => { if (c.isMesh) [c.material].flat().forEach(m => { if (m.name === 'Material.001') { m.emissive.set(PANTALLA); m.emissiveIntensity = 0.35 } }) }))
+{ const luz = new THREE.PointLight(PANTALLA, 0.6, 1.5, 2); luz.position.set(0, 0.25, 0); phone.add(luz) }
 
 // 8. Planta baja: cocina al fondo, comedor a la izquierda, sala con sofá y televisor a la derecha
 into('HOME')
@@ -410,7 +418,9 @@ export const TABLE = raw(S0, -507, -33, -14, 178) // mesa del comedor: el desayu
 // la mesa con un margen de 0.12 m (solid suma PAD = 0.3; por eso se le restan 0.36 al ancho y al fondo)
 // (con más margen no se podía pasar entre la punta de la mesa y el sofá)
 solid(TABLE[1] - TABLE[0] - 0.36, TABLE[3] - TABLE[2] - 0.36, (TABLE[0] + TABLE[1]) / 2, (TABLE[2] + TABLE[3]) / 2)
-export const MOM_SPOT = { x: HX - 2.0, z: -1.8 }   // mamá, en la cocina (frente a la nevera; un poco hacia ella para dejar el paso detrás de las sillas del comedor)
+// mamá, en la cocina: más adelante y lejos de la nevera, a la derecha de la fila de sillas del comedor (antes en HX - 2.0, -1.8: al ir a
+// abrazarla, Gabriela atravesaba el espaldar de una silla; en HX - 1.2 todavía la rozaba): así va casi derecho desde su puesto en el comedor
+export const MOM_SPOT = { x: HX - 0.6, z: -1.5 }
 // silla del comedor donde Gabriela se sienta a comer (la de atrás a la derecha: mira hacia la mesa y hacia la cámara). y: altura del asiento (medida en el modelo)
 export const DINING_SEAT = { x: S0.x - 0.945, z: -0.265, face: 0, y: 0.775, mesa: true }
 // desayuno en la mesa, frente a esa silla (assets/casa/desayuno): el plato cerca de Gabriela y la taza hacia el centro de la mesa. Tres modelos:
@@ -435,13 +445,20 @@ box(FX1 - FX0 - 1.4, 0.9, FZ1 - FZ0 - 1.4, (FX0 + FX1) / 2, -1.1, (FZ0 + FZ1) / 
 // BALDOSA metros, medida sobre el mundo (cada caja ajusta sus coordenadas a su tamaño): así no se estira en los tramos largos. El color
 // del material la tiñe: blanco en calma (sus colores tal cual) y el de tensión de la calle con la ansiedad
 const BALDOSA = 6, texCalle = (n, srgb) => { const t = new THREE.TextureLoader().load(`assets/calle/decoraciones/floor_tiles_18_2k/floor_tiles_18_${n}_1k.jpg`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t }
-// (versión suave de la textura: 35 % de ella sobre el beige de la calle, y sin relieve: así no se ve tan marcada y queda plana como el resto
+// (versión suave de la textura: 6 % de ella sobre el beige de la calle (antes 35 % y 15 %: todavía se veía fuera de lugar), y sin relieve: así no se ve tan marcada y queda plana como el resto
 // del juego. Antes iba completa, con su mapa de normales y aclarada: se veía muy distinta al resto)
 const pisoCalle = mat('#FFFFFF', '#71708A', { map: texCalle('suave', true), roughness: 0.9 })
-const baldosas = (m) => { const p = m.geometry.parameters, uv = m.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * p.width / BALDOSA, uv.getY(i) * p.depth / BALDOSA); m.material = pisoCalle; return m }
+// Las coordenadas de la textura salen de la posición en el mundo (x, z), no de cada caja: donde se juntan dos tramos la textura sigue igual.
+// Por eso todos los tramos (y las calles cerradas) van a la misma altura: donde se montan se dibuja lo mismo y no se nota la unión (antes
+// cada uno estaba 2 mm más arriba que el anterior y en cada esquina quedaba una raya)
+const baldosas = (m) => {
+    const pos = m.geometry.attributes.position, uv = m.geometry.attributes.uv
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (pos.getX(i) + m.position.x) / BALDOSA, -(pos.getZ(i) + m.position.z) / BALDOSA)
+    m.material = pisoCalle; return m
+}
 SEGS.forEach((s, i) => { // los cuatro tramos (el primero sigue detrás de la valla hasta el borde del campo)
     const r = ROADS[i].slice(); if (i === 0) r[0] = FX0 + 1
-    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05 + i * 0.002, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A')) // alturas apenas distintas: las esquinas no parpadean
+    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A'))
 })
 // tramo de la calle eterna: se estira a lo largo (escala en z), así que lleva su propia copia de la textura y la repite según lo estirado
 const pisoExt = mat('#FFFFFF', '#71708A', { map: texCalle('suave', true), roughness: 0.9 })
@@ -456,20 +473,32 @@ GRASS.forEach(({ r: [x0, x1, z0, z1], far, axis }, i) => {
 })
 const sectionMesh = scatter(new THREE.BoxGeometry(1, 0.07, 1), '#799180', '#482642', SECTIONS.map(({ r: [x0, x1, z0, z1] }) => [(x0 + x1) / 2, -0.115, (z0 + z1) / 2, x1 - x0, 1, z1 - z0]))
 
-const curbs = [], stains = [], BORDILLO = 0.03 // altura de la cara de arriba de los bordillos
+// Bordillos: una línea continua a cada lado (una caja por pedazo de línea), a 3.15 del eje. Se corta solo donde se abre otra calle, una calle
+// cerrada o el caminito de la casa, justo en el borde de esa calle: ahí empieza su bordillo, así que las dos líneas se tocan. En cada esquina
+// la línea se alarga CURB_D más allá del asfalto para cruzarse con la del otro tramo (antes eran cajitas de 0.8 m que no llegaban a las
+// esquinas: quedaban huecos y escalones)
+const curbs = [], stains = [], BORDILLO = 0.03, CURB_D = 0.34, CURB_C = HW + 0.15 // altura de la cara de arriba · grosor · distancia al eje
+const CORTES = ROADS.concat(STUBS.map(o => o.r), [grow(PATH, 0.15)])
+function bordillo(lista, axis, c, a0, a1, propio) { // c: coordenada fija · [a0, a1]: de dónde a dónde, a lo largo · propio: su calle (no la corta)
+    let tramos = [[a0, a1]]
+    CORTES.forEach(r => {
+        if (r === propio) return
+        const [u0, u1, v0, v1] = axis === 'x' ? r : [r[2], r[3], r[0], r[1]] // u: a lo largo de la línea · v: a lo ancho
+        if (c + CURB_D / 2 <= v0 || c - CURB_D / 2 >= v1) return
+        tramos = tramos.flatMap(([p, q]) => q <= u0 || p >= u1 ? [[p, q]] : [[p, Math.min(q, u0)], [Math.max(p, u1), q]].filter(([m, n]) => n - m > 0.05))
+    })
+    tramos.forEach(([p, q]) => lista.push(axis === 'x' ? [(p + q) / 2, BORDILLO - 0.03, c, q - p, 1, 1, 0] : [c, BORDILLO - 0.03, (p + q) / 2, q - p, 1, 1, Math.PI / 2]))
+}
 SEGS.forEach((s, i) => {
     const R = ROADS[i], [a0, a1] = s.axis === 'x' ? [R[0], R[1]] : [R[2], R[3]] // de punta a punta del asfalto: la esquina exterior también lleva andén
-    for (let t = a0 + 0.4; t < a1; t += 1.3) [-1, 1].forEach(side => { // andenes a los dos lados
-        const [x, z] = s.axis === 'x' ? [t, s.z0 + side * 3.15] : [s.x0 + side * 3.15, t]
-        if (ROADS.some((o, j) => j !== i && inRect(o, x, z)) || inRect(grow(PATH, 0.4), x, z) || STUBS.some(o => inRect(grow(o.r, 0.4), x, z))) return // (también donde empieza una calle cerrada: el cruce queda abierto) // se abren donde empieza la otra calle y frente al caminito
-        if (curbs.some(([cx, , cz]) => Math.hypot(cx - x, cz - z) < 0.7)) return // en la esquina interior las dos filas no se montan una sobre otra
-        curbs.push(s.axis === 'x' ? [x, BORDILLO - 0.03, z] : [x, BORDILLO - 0.03, z, 1, 1, 1, Math.PI / 2])
-    })
+    const e0 = i > 0 ? CURB_D : 0, e1 = i < SEGS.length - 1 ? CURB_D : 0 // en las esquinas se alarga (en la valla y en la universidad, no)
+    const [lo, hi] = s.dir > 0 ? [a0 - e0, a1 + e1] : [a0 - e1, a1 + e0]
+    ;[-1, 1].forEach(side => bordillo(curbs, s.axis, (s.axis === 'x' ? s.z0 : s.x0) + side * CURB_C, lo, hi, R))
     for (let k = 0; k < s.len * 1.1; k++) stains.push(s.axis === 'x' // manchas del camino
         ? [rr(Math.max(R[0], STREET_X0) + 1, R[1] - 1), 0.01, rr(s.z0 - 2.6, s.z0 + 2.6), 1, 1, 1, rr(-.2, .2)]
         : [rr(s.x0 - 2.6, s.x0 + 2.6), 0.01, rr(R[2] + 1, R[3] - 1), 1, 1, 1, Math.PI / 2 + rr(-.2, .2)])
 })
-scatter(new THREE.BoxGeometry(0.8, 0.06, 0.34), '#A16A49', '#201826', curbs) // bordillos: bajitos (6 cm, antes 16)
+scatter(new THREE.BoxGeometry(1, 0.06, CURB_D), '#A16A49', '#201826', curbs) // bordillos: bajitos (6 cm, antes 16); cada caja se estira a su largo
 // (las manchas del camino ya no se dibujan: las baldosas traen las suyas. Se siguen calculando para no correr lo que se ubica al azar después)
 
 // Valla de obra donde se cierra la calle 1 (después del sismo): dos burros con franjas y una señal
@@ -499,14 +528,13 @@ STUBS.forEach(({ r, axis }, i) => [-1, 1].forEach(side => {
     band(0, GW, -0.1185 + i * 0.0003, '#ABA397', '#4A4452'); band(GW, GW + 12, -0.1235 + i * 0.0003, '#968E81', '#3F3A47')
 }))
 STUBS.forEach(({ r, axis, sg, cx, cz }) => {
-    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.052, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A'))
+    baldosas(box(r[1] - r[0], 0.1, r[3] - r[2], (r[0] + r[1]) / 2, -0.05, (r[2] + r[3]) / 2, '#D8C8AE', '#71708A')) // (a la misma altura que la calle: ver baldosas)
     valla(axis === 'x' ? cx + sg * (HW + 5) : cx, axis === 'x' ? cz : cz + sg * (HW + 5), axis) // un poco adentro de la calle cerrada, no pegada al cruce
-    for (let t = 0.6; t < STUB_LEN; t += 1.3) [-1, 1].forEach(side => {
-        const u = (axis === 'x' ? cx : cz) + sg * (HW + t)
-        stubCurbs.push(axis === 'x' ? [u, BORDILLO - 0.03, cz + side * 3.15] : [cx + side * 3.15, BORDILLO - 0.03, u, 1, 1, 1, Math.PI / 2])
-    })
+    // bordillos continuos desde el borde de la calle principal (ahí empieza su bordillo: se tocan) hasta el final de la calle cerrada
+    const c0 = (axis === 'x' ? cx : cz) + sg * HW, c1 = c0 + sg * STUB_LEN
+    ;[-1, 1].forEach(side => bordillo(stubCurbs, axis, (axis === 'x' ? cz : cx) + side * CURB_C, Math.min(c0, c1), Math.max(c0, c1), r))
 })
-scatter(new THREE.BoxGeometry(0.8, 0.06, 0.34), '#A16A49', '#201826', stubCurbs)
+scatter(new THREE.BoxGeometry(1, 0.06, CURB_D), '#A16A49', '#201826', stubCurbs)
 // el andén gris claro también da la vuelta en las cuatro esquinas de cada cruce (antes quedaba un pedazo sin andén)
 new Set(STUBS.map(o => o.cx + ',' + o.cz)).forEach(k => { const [cx, cz] = k.split(',').map(Number)
     ;[[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sz]) => box(GW, 0.06, GW, cx + sx * (HW + GW / 2), -0.1182, cz + sz * (HW + GW / 2), '#ABA397', '#4A4452')) })
@@ -521,7 +549,7 @@ const stubPlanterMesh = scatter(new THREE.BoxGeometry(1, 0.07, 1), '#799180', '#
 
 // Casas y edificios: cada uno es un grupo con su base en el origen y la puerta en su +z local (rotY la gira hacia la calle).
 // Su planta no se puede atravesar (antes se podía caminar por dentro de las esquinas)
-const plantaSolida = (w, d, x, z, ry) => { const giro = Math.abs(Math.sin(ry)) > 0.5; solid(giro ? d : w, giro ? w : d, x, z) }
+const plantaSolida = (w, d, x, z, ry) => { const giro = Math.abs(Math.sin(ry)) > 0.5; solid(giro ? d : w, giro ? w : d, x, z); SOLIDS[SOLIDS.length - 1].edificio = true } // (edificio: los árboles no se ponen encima, ver tree)
 // Modelos de la calle (assets/calle/edificios): cinco casas y edificios, cada uno con su versión oscura (nivel 3 de ansiedad). Los cinco
 // archivos traen los mismos cinco edificios en fila, así que se carga uno normal y uno oscuro y se separan por malla. En el archivo la
 // fachada mira hacia +x: se giran para que la puerta quede en el +z del grupo, como las casas de antes, con el frente donde estaba el de
@@ -529,7 +557,7 @@ const plantaSolida = (w, d, x, z, ry) => { const giro = Math.abs(Math.sin(ry)) >
 // su pared principal · puerta: cuánto está corrida la puerta del centro de la fachada (hacia la derecha, mirándola)
 const EDIFICIOS = {
     casita: { malla: 'Edificio1', ancho: 480, fondo: 277, alto: 225, pared: 'Pared 1' },
-    casa: { malla: 'Cubo001', ancho: 517, fondo: 322, alto: 310, pared: 'Cadera clara', puerta: 79 },
+    casa: { malla: 'Cubo001', ancho: 517, fondo: 322, alto: 310, pared: 'Cadera clara', puerta: 135 }, // (puerta medida en el modelo: de z -179 a -90; con 79 quedaba corrida del caminito)
     tienda: { malla: 'Cubo002', ancho: 751, fondo: 344, alto: 416, pared: 'Pared 1' },     // la del toldo
     edificio: { malla: 'Cubo', ancho: 420, fondo: 420, alto: 515, pared: 'Cadera clara' },
     torre: { malla: 'Cubo003', ancho: 419, fondo: 420, alto: 806, pared: 'Edificio1' }
@@ -704,7 +732,7 @@ box(0.3, 1.2, 9, -8.5, 0.6, 0, '#A16A49', '#201826', uniG); box(0.3, 1.2, 9, 8.5
 scatter(new THREE.BoxGeometry(0.9, 1, 0.1), '#8296B7', '#201826', [-6, -1.8, 1.8, 6].flatMap(x => [[x, 4.3, 4.05], [x, 6.3, 4.05]]).filter(([x, y]) => Math.abs(x) > 2.1 || y > 5), uniG)
 
 // Capas destruida / reconstruida: edificios del fondo (lado lejano), postes junto al andén y escombros del lado cercano de la calle 1
-const mid = [], posts = []
+const mid = [], posts = [] // (posts: los postes del andén, que ya no se dibujan)
 SEGS.forEach((s, i) => {
     const r = segRect(s, 0), [a0, a1] = s.axis === 'x' ? [Math.max(r[0], STREET_X0), r[1]] : [r[2], r[3]]
     for (let t = a0 + 4, j = 0; t < a1 - 2; t += 9, j++) {
@@ -737,7 +765,7 @@ STUBS.forEach(({ axis, sg, cx, cz }) => {
     for (let t = HW + 7, j = 0; t < HW + STUB_LEN + 3; t += 4.8, j++) { const u = (axis === 'x' ? cx : cz) + sg * t; cajaCerca(...(axis === 'x' ? [u, cz + ATRAS] : [cx + ATRAS, u]), axis === 'x', j + 1) }
 })
 makeLayer('CERCA', cerca)
-posts.forEach(([x, z, w, h, d]) => { box(w, h, d, x, h / 2 - 0.15, z, '#BF895A', '#580213'); solid(w, d, x, z) }) // (sólidos) · postes fijos: antes se "reconstruían" tras cada minijuego y cambiaban de forma, tamaño y color de golpe
+// (los postes del andén ya no se dibujan: sobraban. Se siguen calculando para no correr lo que se ubica al azar después)
 // (sin capa de escombros al frente de la calle 1: ahora ahí hay casas)
 
 // Fallas de la ansiedad (desde el nivel de falla 1: sube al perder un minijuego y baja al ganar uno): copias translúcidas de postes, muros y pedazos de edificio que titilan y
@@ -787,8 +815,9 @@ const SEAT_DEFS = [['Cube005', -244, -64, 0], ['Cube006', -149.5, -64, 0], ['Cub
 export const SEAT_Y = 94 * BUS_S - 1.024 // altura del cojín (ahí se apoya quien se sienta)
 SEAT_DEFS.forEach(([name, x, z, f]) => { // brillo suave alrededor de cada asiento libre, con la forma de la silla (main.js lo enciende mientras estás de pie)
     const glow = new THREE.Group(); glow.visible = false; cur.add(glow)
-    // adelante: cuánto más al frente del cojín se sienta (en las bancas largas el espaldar es más grueso: con 0.1 se metía en él)
-    SEATS.push({ name, x: BUS_X + x * BUS_S, z: z * BUS_S, face: [Math.PI / 2, 0, Math.PI][f], taken: false, glow, adelante: f ? 0.3 : 0.1 })
+    // adelante: cuánto más al frente del cojín se sienta (en las bancas largas el espaldar es más grueso: con 0.1 se metía en él; en la del
+    // fondo, Cube013, se metía en la pared de atrás del MIO)
+    SEATS.push({ name, x: BUS_X + x * BUS_S, z: z * BUS_S, face: [Math.PI / 2, 0, Math.PI][f], taken: false, glow, adelante: name === 'Cube013' ? 0.4 : f ? 0.3 : 0.1 })
 })
 const LLANTA = mat('#482642', '#201826', { flatShading: false })
 model('assets/bus/interior/bus.fbx', 'assets/bus/interior/bus_Oscuro.fbx', cur, BUS_S, BUS_X, -1.024, 0, {
@@ -855,6 +884,7 @@ for (let x = 0.3, i = 0; ; i++) {
 // 11. Objetos interactivos: pos = donde se para el personaje · mark = dónde flota la flecha del objetivo · glow = lo que brilla cuando es el objetivo
 const V = (x, z) => new THREE.Vector3(x, 0, z)
 const S = GROUPS.STREET
+const BUS_K = 1.25 // escala del MIO por fuera
 export const props = {
     cama: { pos: V(-3.93, -1.1), mesh: null, mark: { x: -2.63, y: 2.1, z: -0.7 } },  // pos: donde queda de pie al levantarse (junto a la cabecera, entre la cama y la silla del escritorio)
     armario: { pos: V(-5.1, 0.97), mesh: wardrobe, mark: { x: -6.13, y: 3.2, z: 0.97 } },
@@ -865,12 +895,14 @@ export const props = {
     desayuno: { pos: V(DINING_SEAT.x + 0.7, DINING_SEAT.z - 0.4), mesh: breakfast, rect: TABLE, mark: { x: breakfast.position.x, y: 1.9, z: breakfast.position.z } }, // rect: se come estando cerca de la mesa (no en un punto exacto)
     salida: { pos: V(...mid2(DOORS.calle)), mesh: null, mark: { x: mid2(DOORS.calle)[0], y: 1.4, z: mid2(DOORS.calle)[1] } },   // flecha de la entrada
     // MIO por fuera (temporal). rect = huella en planta (para medir la cercanía)
-    bus: { pos: V(W.busX, 1), mesh: outlined(box(6, 2, 2.2, W.busX + 4, 1, -1.8, '#2F7DAA', '#482642', S), 6, 2, 2.2, 0.2, 0, SOFT),
-        rect: [W.busX + 1, W.busX + 7, -2.9, -0.7], mark: { x: W.busX + 4, y: 3.1, z: -1.8 } }
+    // (todo el MIO va a escala BUS_K: con la caja de 6 m se veía enano al lado de Gabriela. El centro sube para que las llantas sigan en el piso)
+    bus: { pos: V(W.busX, 1), mesh: outlined(box(6, 2, 2.2, W.busX + 4, BUS_K, -1.8, '#2F7DAA', '#482642', S), 6, 2, 2.2, 0.2, 0, SOFT),
+        rect: [W.busX + 4 - 3 * BUS_K, W.busX + 4 + 3 * BUS_K, -1.8 - 1.1 * BUS_K, -1.8 + 1.1 * BUS_K], mark: { x: W.busX + 4, y: 2 * BUS_K + 1.1, z: -1.8 } }
 }
+props.bus.mesh.scale.setScalar(BUS_K)
 Object.values(props).forEach(p => { p.glow ||= p.mesh?.userData.outline })
 // El MIO frente a la universidad: solo aparece si aguantaste el viaje completo (y entonces desaparece el del paradero)
-export const uniBus = props.bus.mesh.clone(); uniBus.rotation.y = Math.PI / 2; uniBus.position.set(UX + 1.9, 1, GATE + 10); uniBus.visible = false; S.add(uniBus)
+export const uniBus = props.bus.mesh.clone(); uniBus.rotation.y = Math.PI / 2; uniBus.position.set(UX + 1.9, BUS_K, GATE + 10); uniBus.visible = false; S.add(uniBus)
 uniBus.children.forEach(c => { if (c.material === SOFT) c.visible = false })
 // El MIO por fuera: el modelo assets/bus/exterior/bus-calle.fbx (la caja de antes queda invisible: sigue siendo su huella, su brillo y su
 // colisión). Los colores del archivo no se usan: el azul del MIO y vidrios oscuros, como el de la foto de referencia. Los materiales del
@@ -906,8 +938,8 @@ uniBus.children.forEach(c => { if (c.material === SOFT) c.visible = false })
         fin()
     }, undefined, fin)
 }
-solid(6, 2.2, W.busX + 4, -1.8, () => props.bus.mesh.visible, 'STREET')
-solid(2.2, 6, UX + 1.9, GATE + 10, () => uniBus.visible, 'STREET')
+solid(6 * BUS_K, 2.2 * BUS_K, W.busX + 4, -1.8, () => props.bus.mesh.visible, 'STREET')
+solid(2.2 * BUS_K, 6 * BUS_K, UX + 1.9, GATE + 10, () => uniBus.visible, 'STREET')
 export function resetProps() { Object.values(props).forEach(p => { if (p.mesh) p.mesh.visible = true }); uniBus.visible = false }
 
 // Marcador del objetivo actual

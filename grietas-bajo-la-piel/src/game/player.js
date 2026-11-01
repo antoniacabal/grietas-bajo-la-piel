@@ -79,12 +79,16 @@ const down = (...c) => c.some(k => keys.has(k))
 let mode = 'free' // free | stop | agitated | guided | calm
 let lying = false, sitting = false, seatLocked = false // seatLocked: antes del sismo, una vez sentada en el MIO no se levanta
 let enPijama = true
+let abrazando = false, abrazo = 0 // abrazo con mamá: 0 → 1 (suave al entrar y al salir)
+let paseando = false
 export const player = {
     group,
     setMode(m) { mode = m },
     setBackpack(v) { conMaleta = v; backpack.visible = v }, // maleta a la espalda
     cargarModelo() { return Promise.all([prota.cargar('normal'), prota.cargar('pijama')]) }, // devuelve una promesa (main.js espera el modelo antes de la tarjeta "10 de agosto")
     setPijama(v) { enPijama = v }, // con pijama (antes de vestirse) o con la ropa del día
+    abrazar(v) { abrazando = v }, // abrazo con mamá (main.js, al despedirse antes de salir)
+    paseo(v) { paseando = v }, // camina sin que la mueva el teclado (main.js mueve su posición)
     // gesto de coger algo en (x, z): se voltea hacia el objeto, estira la mano y lo recoge. alMedio: cuando la mano llega · alFinal: al terminar
     coger(x, z, alMedio, alFinal) {
         const r = group.rotation, want = Math.atan2(x - group.position.x, z - group.position.z)
@@ -116,12 +120,13 @@ export const player = {
     get x() { return group.position.x }, set x(v) { group.position.x = v },
     get z() { return group.position.z }, set z(v) { group.position.z = v },
     update(dt, t) {
-        let s = 1, moving = false
+        let s = 1, moving = paseando // (paseando: main.js la lleva caminando, p. ej. hasta mamá para abrazarla)
         let ix = (down('KeyD') ? 1 : 0) - (down('KeyA') ? 1 : 0) // solo WASD (las flechas no: no están en los controles)
         let iy = (down('KeyW') ? 1 : 0) - (down('KeyS') ? 1 : 0), push = 1
         const jm = Math.hypot(runtime.joyX, runtime.joyY) // joystick táctil: la dirección es libre y empujarlo poco camina más lento
         if (jm > 0.2) { ix = runtime.joyX; iy = runtime.joyY; push = Math.min(1, 0.35 + jm * 0.9) }
         if (sitting && !seatLocked && (ix || iy)) this.unsit() // al moverte te levantas (salvo en el viaje de antes del sismo)
+        if (sitting && runtime.tambaleo !== undefined) this.unsit() // Reconstruir la gravedad se juega de pie (en el MIO se quedaba sentada)
         if (mode === 'free' && !lying && !sitting) {
             if (ix || iy) {
                 const n = Math.hypot(ix, iy), a = THREE.MathUtils.degToRad(CONFIG.camera.azimuth)
@@ -165,6 +170,7 @@ export const player = {
             group.rotation.y = THREE.MathUtils.degToRad(CONFIG.camera.azimuth); group.rotation.z = -runtime.tambaleo * 0.15
             prota.pose('tambaleo', t, runtime.tambaleo)
         }
+        else if ((abrazo += ((abrazando ? 1 : 0) - abrazo) * Math.min(1, dt * 4)) > 0.01) prota.pose('abrazar', t, abrazo)
         else if (gesto) prota.pose('coger', t, gesto.t / gesto.dur)
         else if (comiendo) prota.pose(sitting ? 'comerSentada' : 'comer', t) // en la mesa come sentada
         else prota.pose(lying ? 'acostada' : sitting ? 'sentada' : andar > 0.05 ? 'caminar' : susto > 0.05 ? 'miedo' : 'quieta', andar > 0.05 ? fase : t, andar > 0.05 ? andar : susto, correr)
@@ -174,7 +180,7 @@ export const player = {
         // antes del sismo y en el final bueno, la normal · después del sismo, según el nivel de ansiedad (0, 1, 2 o 3, el de la espiral)
         const nivel = runtime.levelVis ?? -1
         quieta = moving || runtime.state !== 'EXPLORATION' ? 0 : quieta + dt
-        if (lying) prota.expresion(runtime.postQuake ? 'parpadeoLagrimas' : 'parpadeo2')
+        if (lying || abrazo > 0.3) prota.expresion(runtime.postQuake ? 'parpadeoLagrimas' : 'parpadeo2') // (abrazando a mamá también cierra los ojos)
         else if (salto || susto > 0.5 || ['BREATHING', 'FAILURE', 'QUAKE'].includes(runtime.state)) prota.expresion('susto', ['parpadeoAnsioso1', 'parpadeoAnsioso2'])
         else if (quieta > DEMORA) prota.expresion('susto', 'parpadeoLagrimas')
         else if (nivel < 0) prota.expresion('normal', 'parpadeo')

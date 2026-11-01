@@ -71,16 +71,20 @@ export const mom = (() => {
     const rig = crearPersonaje(1.8, { normal: 'assets/casa/madre/Mama.fbx', oscuro: 'assets/casa/madre/MamaOsc.fbx' }, null, {
         proporciones: [[0, 0], [38, 42], [90, 74], [100, 81], [104, 84], [150, 128]], hoja: CARAS_MAMA, anchoCara: 41 })
     rig.cargar('normal'); g.add(rig.grupo); g.position.set(MOM_SPOT.x, 0, MOM_SPOT.z); spaces.HOME.add(g)
-    let talking = false, sonrie = 0
+    let talking = false, sonrie = 0, abrazando = false, abrazo = 0 // abrazo: 0 → 1 (suave al entrar y al salir)
     return {
         g,
         setTalking(v) { if (v && !talking && !runtime.postQuake) sonrie = 1.4; talking = v },
+        setAbrazo(v) { abrazando = v }, // abrazo con Gabriela (main.js, al despedirse antes de salir)
         update(dt, t) {
-            rig.pose(talking ? 'hablar' : 'quieta', t); rig.aplicar(dt) // (también fuera de la cocina: el archivo está en T y, si no, al llegar se la veía bajando los brazos)
+            abrazo += ((abrazando ? 1 : 0) - abrazo) * Math.min(1, dt * 4)
+            if (abrazo > 0.01) rig.pose('abrazar', t, abrazo, 0.6); else rig.pose(talking ? 'hablar' : 'quieta', t) // (0.6: inclina la cabeza hacia Gabriela, que es más bajita)
+            rig.aplicar(dt) // (también fuera de la cocina: el archivo está en T y, si no, al llegar se la veía bajando los brazos)
             if (runtime.space !== 'HOME') return
             const want = Math.atan2(player.x - g.position.x, player.z - g.position.z)
             let d = want - g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); g.rotation.y += d * Math.min(1, dt * 4)
-            sonrie -= dt; rig.expresion(sonrie > 0 ? 'cerrados' : 'normal', sonrie > 0 ? null : 'parpadeo')
+            sonrie -= dt; const cerrados = sonrie > 0 || abrazo > 0.3 // sonriendo o abrazando: los ojos cerrados
+            rig.expresion(cerrados ? 'cerrados' : 'normal', cerrados ? null : 'parpadeo')
             const nivel = runtime.levelVis ?? -1; if (nivel > 2) rig.cargar('oscuro') // como Gabriela (player.js): se prepara un poco antes
             const { normal, oscuro } = rig.versiones; if (normal && oscuro) { normal.visible = nivel <= 2.75; oscuro.visible = nivel > 2.75 }
             rig.grupo.position.y = 0.002 - rig.piso() // apoyada en la suela más baja
