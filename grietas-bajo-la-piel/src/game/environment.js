@@ -439,8 +439,11 @@ RECTS.HOUSE = [raw(R0, -350, 360, -310, 325)]; RECTS.HOME = [raw(S0, -740, 1030,
 into('STREET')
 const RB = ROUTE.reduce((b, [x, z]) => [Math.min(b[0], x), Math.max(b[1], x), Math.min(b[2], z), Math.max(b[3], z)], [Infinity, -Infinity, Infinity, -Infinity])
 const FX0 = RB[0] - 12, FX1 = RB[1] + 36, FZ0 = RB[2] - 22, FZ1 = RB[3] + 22 // el campo llega lejos de la calle: nunca se ve el vacío
-const field = box(FX1 - FX0, 0.5, FZ1 - FZ0, (FX0 + FX1) / 2, -0.4, (FZ0 + FZ1) / 2, '#799180', '#482642') // campo (superficie y = -0.15)
-box(FX1 - FX0 - 1.4, 0.9, FZ1 - FZ0 - 1.4, (FX0 + FX1) / 2, -1.1, (FZ0 + FZ1) / 2, '#A16A49', '#201826') // base de tierra flotante
+// el pasto se extiende ORILLA m más allá en cada lado: en el celular de pie la cámara se aleja (camera.js) y junto a la casa se veía el vacío
+// (solo cambia el tamaño del campo: FX0… siguen marcando dónde va la calle y los árboles sueltos)
+const ORILLA = 30
+const field = box(FX1 - FX0 + 2 * ORILLA, 0.5, FZ1 - FZ0 + 2 * ORILLA, (FX0 + FX1) / 2, -0.4, (FZ0 + FZ1) / 2, '#799180', '#482642') // campo (superficie y = -0.15)
+box(FX1 - FX0 + 2 * ORILLA - 1.4, 0.9, FZ1 - FZ0 + 2 * ORILLA - 1.4, (FX0 + FX1) / 2, -1.1, (FZ0 + FZ1) / 2, '#A16A49', '#201826') // base de tierra flotante
 // Piso de la calle: baldosas (assets/calle/decoraciones/floor_tiles_18, copias de 1k: las de 2k pesaban 9 MB). La textura se repite cada
 // BALDOSA metros, medida sobre el mundo (cada caja ajusta sus coordenadas a su tamaño): así no se estira en los tramos largos. El color
 // del material la tiñe: blanco en calma (sus colores tal cual) y el de tensión de la calle con la ansiedad

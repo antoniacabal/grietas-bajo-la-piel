@@ -323,6 +323,29 @@ body.gx-touch-on .gx-ver-controles{display:none}
 .gx-touch-on .gx-foco .gx-flecha{width:62px;height:62px}
 /* celular acostado: más compactos */
 @media (max-height:560px) and (orientation:landscape){.gx-foco{gap:.5rem;padding:.7rem 1.2rem}.gx-foco-dial{width:clamp(110px,34vh,160px)}}
+/* celular acostado, en los minijuegos con panel: el avance ("0 de 5", la barra, el tiempo y "?") quedaba debajo del panel, que ocupa casi todo
+   el alto. Pasa a una fila arriba, entre los botones de las esquinas, y el panel baja y se compacta para caber debajo */
+@media (max-height:560px) and (orientation:landscape){
+    .gx-touch-on.gx-mini-panel .gx-breath{top:max(10px,env(safe-area-inset-top));bottom:auto;flex-direction:row;gap:.6rem;z-index:8}
+    .gx-touch-on.gx-mini-panel .gx-breath .gx-label{margin-bottom:0;font-size:1.15rem;padding:.15rem .7rem}
+    .gx-touch-on.gx-mini-panel .gx-bar{width:150px;height:14px;padding:2px}
+    .gx-touch-on.gx-mini-panel .gx-timer{margin-top:0}
+    .gx-touch-on.gx-mini-panel .gx-breath-hint{display:none}
+    .gx-touch-on.gx-mini-panel .gx-ayuda{position:static;flex:none;order:9} /* el "?" al final de la fila */
+    .gx-touch-on .gx-conteo{top:calc(50% + 26px);gap:.45rem;padding:.6rem 1.2rem .7rem}
+    .gx-touch-on .gx-conteo-titulo{font-size:1rem}
+    .gx-touch-on .gx-conteo--horizontal .gx-conteo-mano{width:clamp(90px,34vh,150px)}
+    .gx-touch-on .gx-conteo--horizontal .gx-conteo-op{min-height:54px;font-size:2rem}
+    .gx-touch-on .gx-foco{top:3.6rem;gap:.4rem;padding:.55rem 1.1rem .7rem}
+    .gx-touch-on .gx-foco-dial{width:clamp(90px,28vh,130px)}
+    .gx-touch-on .gx-foco .gx-flecha{width:52px;height:52px}
+    /* Reconstruir la gravedad: el panel tapaba a Gabriela (lo que importa ver): baja al borde de abajo, con las flechas y el botón en una fila */
+    .gx-touch-on .gx-gravedad{top:auto;bottom:max(8px,env(safe-area-inset-bottom));flex-direction:row;flex-wrap:wrap;justify-content:center;column-gap:.8rem;row-gap:.35rem;padding:.5rem 1rem;max-width:min(520px,92vw)}
+    .gx-touch-on .gx-gravedad .gx-nivel,.gx-touch-on .gx-gravedad-ayuda{flex-basis:100%}
+    .gx-touch-on .gx-gravedad .gx-nivel{flex-basis:auto;margin:0 calc(50% - 90px)}
+    .gx-touch-on .gx-gravedad .gx-flecha{width:52px;height:52px}
+    .gx-touch-on .gx-gravedad-giro{min-height:52px}
+}
 /* Flechas táctiles de Reconstruir la gravedad y Foco entre el ruido: solo en celular (mantener presionada = A o D) */
 .gx-flechas{display:none;gap:1.2rem;justify-content:center}
 .gx-touch-on .gx-flechas{display:flex}
