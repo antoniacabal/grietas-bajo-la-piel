@@ -12,7 +12,7 @@
 
 // 0. Imports
 import * as THREE from 'three'
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+import { CargadorModelos } from './modelos.js' // (los FBX se publican como GLB con Draco)
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 // 1. Colores del archivo: Blender guarda los colores en lineal y el cargador de FBX los lee como si fueran sRGB, así que se veían
@@ -394,7 +394,7 @@ export function crearPersonaje(alto, archivos, alCargar, { cara = true, proporci
     const grupo = new THREE.Group(), versiones = {}, rigs = [], escala = alto / MODELO
     const cuerpo = { prop: proporciones ? tramos(proporciones) : igual, hoja, ancho: anchoCara }
     const giro = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()])), meta = Object.fromEntries(NAMES.map(n => [n, new THREE.Vector3()]))
-    const fbx = new FBXLoader(), pedidas = {}, punto = new THREE.Vector3(), inv = new THREE.Matrix4()
+    const fbx = new CargadorModelos(), pedidas = {}, punto = new THREE.Vector3(), inv = new THREE.Matrix4()
     // la cara: una copia de la hoja para cada personaje (comparten la imagen, pero cada uno muestra su propia expresión)
     const tex = cara ? hoja.tex.clone() : null
     const matCara = cara ? new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0x555555, transparent: true, alphaTest: 0.08, depthWrite: false, roughness: 0.8, // (un poco de brillo propio: con la luz se veían muy oscuros)
@@ -444,7 +444,7 @@ const negro = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.9 }
 const ojoExtra = new THREE.SphereGeometry(1, 10, 8)
 export function crearExtras(alto, urls) {
     const escala = alto / MODELO, formas = []
-    const listo = Promise.all(urls.map((u, i) => new FBXLoader().loadAsync(u).then(o => {
+    const listo = Promise.all(urls.map((u, i) => new CargadorModelos().loadAsync(u).then(o => {
         o.updateMatrixWorld(true)
         const partes = []; o.traverse(c => { if (!c.isMesh) return; let g = pesada(c); if (g.index) g = g.toNonIndexed(); Object.keys(g.attributes).forEach(k => { if (!['position', 'normal', 'skinIndex', 'skinWeight'].includes(k)) g.deleteAttribute(k) }); g.clearGroups(); partes.push(g) })
         formas[i] = mergeGeometries(partes)

@@ -8,3 +8,13 @@ Experiencia web interactiva sobre las huellas emocionales que deja un sismo. El 
 npm install
 npm run dev
 ```
+
+## Modelos 3D
+
+Los modelos se exportan de Blender como FBX a `static/assets/`, pero el juego carga su versión GLB comprimida con Draco (unas 7 veces más liviana). Después de agregar o cambiar un FBX:
+
+```bash
+npm run modelos
+```
+
+Los FBX no se publican: `npm run build` los quita de `dist/`.

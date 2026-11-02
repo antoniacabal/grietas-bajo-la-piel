@@ -1,7 +1,22 @@
 import restart from 'vite-plugin-restart'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
+import path from 'node:path'
 
 const pagina = (archivo) => fileURLToPath(new URL('./src/' + archivo, import.meta.url))
+
+// Los FBX son la fuente de los modelos (el juego carga sus GLB con Draco: npm run modelos). No se publican: pesaban 51 MB
+const sinFbx = {
+    name: 'sin-fbx',
+    closeBundle() {
+        const borrar = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach(e => {
+            const p = path.join(dir, e.name)
+            if (e.isDirectory()) borrar(p)
+            else if (e.name.toLowerCase().endsWith('.fbx')) fs.rmSync(p)
+        })
+        borrar(fileURLToPath(new URL('./dist/assets', import.meta.url)))
+    }
+}
 
 export default {
     root: 'src/', // Sources files (typically where index.html is)
@@ -30,6 +45,7 @@ export default {
     },
     plugins:
     [
-        restart({ restart: [ '../static/**', ] }) // Restart server on static file change
+        restart({ restart: [ '../static/**', ] }), // Restart server on static file change
+        sinFbx
     ],
 }

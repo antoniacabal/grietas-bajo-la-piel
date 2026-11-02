@@ -17,7 +17,7 @@
 
 // 0. Imports
 import * as THREE from 'three'
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+import { CargadorModelos } from './modelos.js' // (los FBX se publican como GLB con Draco)
 import { scene, ambient, sun } from './scene.js'
 import { CONFIG, runtime } from './config.js'
 const W = CONFIG.world, HX = W.homeX
@@ -194,7 +194,7 @@ const MODEL_COLORS = {
     'Azul 1': '#8296B7', 'Azul 2': '#71708A', 'Azul 3': '#D8C8AE', Violeta: '#A16A49', Violeta2: '#BF895A'                                       // interior del MIO (sillas cafés de la paleta: las verdes se confundían con la camiseta y la maleta de Gabriela)
 }
 const nearestPal = (c) => { let best = '#71708A', bd = Infinity; Object.keys(PAIRS).forEach(k => { const d = new THREE.Color(k).sub(c); const e = d.r * d.r * 3 + d.g * d.g * 4 + d.b * d.b * 2; if (e < bd) { bd = e; best = k } }); return best }
-const fbx = new FBXLoader(), MODELS = []
+const fbx = new CargadorModelos(), MODELS = []
 // modelosListos: se cumple cuando terminaron de cargar todos los FBX (main.js espera esto antes de la tarjeta "10 de agosto": si cargaban
 // mientras la tarjeta aparecía, el fundido se trababa). Con un tope de 12 s por si alguno no llega
 let pendientes = 0, avisarListos = () => {}

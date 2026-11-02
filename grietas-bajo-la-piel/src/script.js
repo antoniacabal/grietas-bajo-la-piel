@@ -178,7 +178,7 @@ async function iniciarMuestra() {
     let cargados = 0 // cuando los dos archivos están (el cuarto y Gabriela), la muestra reemplaza a la imagen de respaldo
         // El cuarto de Gabriela sin paredes (Cuarto-prueba.fbx) como piso de la muestra, con ella de pie en medio, ansiosa.
         // Misma escala y colores del juego (environment.js), para que la muestra se vea como el juego
-        const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js')
+        const { CargadorModelos } = await import('./game/modelos.js') // (los FBX se publican como GLB con Draco)
         const { toCreasedNormals } = await import('three/addons/utils/BufferGeometryUtils.js')
         const SH = 0.0065 // escala del cuarto en el juego
         const COLORES = { Pared: '#A6869B', suelo: '#BF895A', Suelo: '#BF895A', Cafe: '#A16A49', 'Cafe claro': '#BF895A', Naranja: '#BF4E24', Colchon: '#A6869B', Cortina: '#F2C063', Amarillo: '#F2C063', Material: '#799180', Salida: '#71708A', Pantalla: '#D8C8AE' }
@@ -216,7 +216,7 @@ async function iniciarMuestra() {
         // el celular sobre el escritorio (Cel.fbx), en el mismo lugar, tamaño y colores que en el juego (environment.js: R0.x - 290 · SH, sobre
         // la tabla, a -0.25; aquí el cuarto está corrido 19 · SH y 5 · SH). Sus materiales se pintan con los de la paleta (por nombre)
         const DEL_CELULAR = { Material: 'Naranja', 'Material.001': 'Pantalla', 'Material.002': 'Cafe claro' }
-        new FBXLoader().load('assets/casa/celular/Cel.fbx', (o) => {
+        new CargadorModelos().load('assets/casa/celular/Cel.fbx', (o) => {
             o.traverse(c => {
                 if (!c.isMesh) return
                 c.material = [c.material].flat().map(m => pintar({ name: DEL_CELULAR[m.name] || 'Naranja' })); if (c.material.length === 1) c.material = c.material[0]
@@ -231,7 +231,7 @@ async function iniciarMuestra() {
         // en el glitch el celular se apaga (la pantalla deja de brillar y su luz se va); al volver a la calma se prende otra vez
         let luzCelular = null
         const prenderCelular = (si) => { if (pintura.Pantalla) pintura.Pantalla.emissiveIntensity = si ? 0.35 : 0; if (luzCelular) luzCelular.intensity = si ? 0.6 : 0 }
-        new FBXLoader().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
+        new CargadorModelos().load('assets/casa/cuarto/Cuarto-prueba.fbx', (o) => {
             cargados++
             const sobra = []; o.traverse(c => { if (c.isLight || c.isCamera) sobra.push(c) }); sobra.forEach(c => c.removeFromParent()) // luces y cámaras de Blender
             // bordes nítidos solo en las piezas en forma de caja (armario, libros, colchón, estructura de la cama, base): el archivo trae las
@@ -406,7 +406,7 @@ async function iniciarMuestra() {
         cuarto.add(personaje)
         let prota = null
         const ALTO_MUESTRA = 2.15 // un poco más alta que en el juego (1.8): en la muestra se veía muy pequeña al lado de los muebles
-        new FBXLoader().load('assets/protagonista/Personaje.fbx', (o) => {
+        new CargadorModelos().load('assets/protagonista/Personaje.fbx', (o) => {
             cargados++
             try { prota = armar(o, ALTO_MUESTRA / MODELO); personaje.add(prota.cont) }
             catch (error) { // si armar el esqueleto falla, igual se ve (quieta, con sus colores)
